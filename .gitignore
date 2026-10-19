@@ -1,0 +1,11 @@
+# Editor / OS
+.vs/
+.vscode/
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+
+# Game / runtime leftovers if copied into the tree
+*.log
+save/
