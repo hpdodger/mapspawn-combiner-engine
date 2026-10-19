@@ -73,6 +73,8 @@ nut/reactivedrop/
 | `tk_counter` | `!tkc*` — счётчик тимкиллов; сейвы в `save/vscripts/tk_counter/` |
 | `laser_pointer` | `laser` / `!laser` и `scripted_user_func`; тюнинг через `!am_vars` / `!am_set` |
 
+Свечение на конце луча — `info_particle_system` с эффектом `blink` (список имён: https://steamcommunity.com/sharedfiles/filedetails/?id=2689066493). Клиент рисует такие сущности только при `rd_info_particle_system_enabled 1` (в игре это значение по умолчанию, пишется в `cfg/config.cfg`). Если там `0`, свечения нет. Луч от этой настройки не зависит. Настройка клиентская: у каждого игрока своя.
+
 ### Команды `!am_`
 
 | Команда | Кто | Что делает |

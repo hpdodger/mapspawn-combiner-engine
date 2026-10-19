@@ -26,7 +26,7 @@ local m = {
     name        = "laser_pointer",
     enabled     = true,
     convars     = {},
-    version     = "1.0.7",
+    version     = "1.0.10",
     description = "DRG-style laser pointer: a beam everyone sees. Check your console for key binding examples.",
 
     // Printed to the player's console by !am_info (chat is too narrow for binds).
@@ -68,9 +68,9 @@ local m = {
     // Engine assets, always shipped with the game (see asw_ammo.cpp / asw_tesla_trap.cpp)
     _MARKER_MODEL = "models/swarm/ammo/ammoassaultrifle.mdl",
     _FLASH_SPRITE = "sprites/glow01.vmt",
-    // Same string as the working offhand script. The particle file also
-    // contains "JumpJet_glow"; both are precached.
-    _TIP_EFFECT   = "jumpjet_glow",
+    // End glow from the particle list (electrical_fx.pcf). Clients draw it
+    // only when rd_info_particle_system_enabled is 1.
+    _TIP_EFFECT   = "blink",
 
     _COLORS = ["255 50 50", "0 220 255", "50 255 50", "255 220 0",
                "255 140 0", "255 50 255", "220 220 220", "160 50 255"],
@@ -284,24 +284,21 @@ local m = {
         st.tip = null;
     },
 
-    // JumpJet_glow is a short burst and info_particle_system is sent to every
-    // client (FL_EDICT_ALWAYS). Do not parent it: SetParent keeps an entity
-    // that still sits at the map origin glued to 0,0,0, so nobody at the
-    // crosshair sees it. Place a fresh one on the hit point, like a ping.
+    // info_particle_system is sent to every client. start_active must be set
+    // before Spawn, or Activate never turns the system on. Do not parent it.
     function _placeTip(st, pos) {
         local now = Time();
-        if (st.tip != null && st.tip.IsValid() && (now - st.tipStarted) < 0.5) {
+        if (st.tip != null && st.tip.IsValid() && (now - st.tipStarted) < 0.45) {
             st.tip.SetOrigin(pos);
             return;
         }
         this._tipOff(st);
         local p = Entities.CreateByClassname("info_particle_system");
         p.__KeyValueFromString("effect_name", this._TIP_EFFECT);
+        p.__KeyValueFromString("start_active", "1");
         p.SetOrigin(pos);
         p.Spawn();
         p.Activate();
-        DoEntFire("!self", "Start", "", 0, null, p);
-        DoEntFire("!self", "Kill", "", 1, null, p);
         st.tip = p;
         st.tipStarted = now;
     },
@@ -343,7 +340,6 @@ local m = {
         PrecacheModel(this._MARKER_MODEL);
         PrecacheModel(this._FLASH_SPRITE);
         PrecacheParticleSystem(this._TIP_EFFECT);
-        PrecacheParticleSystem("JumpJet_glow");
     },
 
     // admin calls this on !am_disable: hide everything we own. Active
@@ -496,8 +492,7 @@ local m = {
         return this._describeEntity(best);
     },
 
-    // Legacy world-space burst. Off by default: these particle systems are not
-    // loaded on every map (the glow flash always works, this is a bonus).
+    // Legacy world-space burst. Off by default.
     function _particleBurst(pos) {
         foreach (eff in [this._TIP_EFFECT, "explosion_sparks"]) {
             local p = Entities.CreateByClassname("info_particle_system");
@@ -559,6 +554,10 @@ local m = {
             st.lastHit = (hit != null && hit.IsValid() && hit.GetClassname() != "worldspawn") ? hit : null;
             st.lastEnd = dstPos;
 
+            local tipPos = dstPos;
+            if ("normal" in t)
+                tipPos = dstPos + t.normal * 8;
+
             st.src.SetOrigin(srcPos);
             st.dst.SetOrigin(dstPos);
 
@@ -571,7 +570,7 @@ local m = {
                 DoEntFire("!self", "TurnOn", "", 0, null, b);
                 st.beamOn = true;
             }
-            this._placeTip(st, dstPos);
+            this._placeTip(st, tipPos);
         }
 
         foreach (p in toHeal) {
