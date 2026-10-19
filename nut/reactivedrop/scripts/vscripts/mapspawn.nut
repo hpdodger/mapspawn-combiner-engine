@@ -1,32 +1,32 @@
-// mapspawn.nut — вход always-on модулей на каждой карте.
+// mapspawn.nut — вход модулей mapspawn combiner на каждой карте.
 // Нужен: sv_mapspawn_nut_exec 1  (см. cfg/autoexec.cfg)
 //
 // Здесь только загрузка реестра/модулей и привязка хуков движка.
-// Логику фич в этот файл не писать: новый always/module_*.nut + IncludeScript.
+// Логику фич в этот файл не писать: новый modules/<name>/module_*.nut + IncludeScript.
 
-if ( "AlwaysMapspawnLoaded" in getroottable() )
+if ( "McMapspawnLoaded" in getroottable() )
     return;
-getroottable().AlwaysMapspawnLoaded <- true;
+getroottable().McMapspawnLoaded <- true;
 
-IncludeScript( "always/registry" );
-IncludeScript( "always/game_events" );
-IncludeScript( "always/thinker_hooks" );
+IncludeScript( "mapspawn_combiner/registry" );
+IncludeScript( "mapspawn_combiner/game_events" );
+IncludeScript( "mapspawn_combiner/thinker_hooks" );
 
 printl( "─────────────────────────────────────────" );
-printl( "  Always-on modules  registry v" + ::ALWAYS_REGISTRY_VERSION );
+printl( "  Mapspawn Combiner  registry v" + ::McRegistry.version );
+printl( "  Author: typical russian (https://steamcommunity.com/id/w_asd/)" );
 printl( "─────────────────────────────────────────" );
 
-// Порядок = порядок раздачи. chat_admin первым — чтобы им всегда можно было управлять остальными.
-IncludeScript( "always/module_chat_admin" );
-IncludeScript( "always/module_tk_counter" );
-// IncludeScript( "always/module_achievements" );
+// Порядок = порядок раздачи. admin первым — чтобы им всегда можно было управлять остальными.
+IncludeScript( "mapspawn_combiner/modules/admin/module_admin" );
+IncludeScript( "mapspawn_combiner/modules/tk_counter/module_tk_counter" );
+IncludeScript( "mapspawn_combiner/modules/laser_pointer/module_laser_pointer" );
 
 // Файл настроек сервера (тихие флаги enabled — без OnEnable/OnDisable).
-local _alwaysAdmin = ::AlwaysFindModule( "chat_admin" );
-if ( _alwaysAdmin != null && ( "ApplySavedSettings" in _alwaysAdmin ) )
-    _alwaysAdmin.ApplySavedSettings( true );
+local _mcAdmin = ::McRegistry.FindModule( "admin" );
+if ( _mcAdmin != null && ( "ApplySavedSettings" in _mcAdmin ) )
+    _mcAdmin.ApplySavedSettings( true );
 
-::AlwaysApplyConvars();
-
-::AlwaysBindGameEventDispatchers();
-::AlwaysBindThinkerHooks();
+::McRegistry.ApplyConvars();
+::McGameEvents.BindDispatchers();
+::McThinkers.BindHooks();

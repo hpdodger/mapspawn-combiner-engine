@@ -1,25 +1,19 @@
-// always/module_tk_counter.nut
-// Модуль счётчика тимкиллов для always-on шины.
+// mapspawn_combiner/modules/tk_counter/module_tk_counter.nut
+// Подключает счётчик тимкиллов к реестру McRegistry.
 // Реестр уже должен быть загружен mapspawn.
-// Логика счётчика — в tk_counter/*.nut (в script scope worldspawn).
+// Логика счётчика — в modules/tk_counter/*.nut (в script scope worldspawn).
 
 if ( "TkCounterLoaded" in getroottable() ) {
-    printl( "[Always] tk_counter: already loaded, skip" );
+    printl( "[MC] tk_counter: already loaded, skip" );
 } else {
     getroottable().TkCounterLoaded <- true;
 
-    IncludeScript( "tk_counter/version" );
-
-    printl( "─────────────────────────────────────────" );
-    printl( "  TK Counter  v" + ::g_TkVersion + "  [always module]" );
-    printl( "  Author: typical russian (https://steamcommunity.com/id/w_asd/)" );
-    printl( "  type !tkc_help for more info" );
-    printl( "─────────────────────────────────────────" );
+    IncludeScript( "mapspawn_combiner/modules/tk_counter/version" );
 
     local hWorld = Entities.FindByClassname( null, "worldspawn" );
     hWorld.ValidateScriptScope();
     local scope = hWorld.GetScriptScope();
-    IncludeScript( "tk_counter/tk_counter", scope );
+    IncludeScript( "mapspawn_combiner/modules/tk_counter/tk_counter", scope );
 
     local m = {
         name        = "tk_counter",
@@ -27,9 +21,9 @@ if ( "TkCounterLoaded" in getroottable() ) {
         convars     = {},
         version     = ::g_TkVersion,
         description = "Teamkill counter, ranks, !tkc commands.",
-        requires_registry = 3,
+        requires_registry = 4,
 
-        // Заполняется ниже перед AlwaysRegister: вложенные function
+        // Заполняется ниже перед Register: вложенные function
         // в VScript плохо держат внешние local, поэтому поле таблицы.
         _scope = null,
 
@@ -51,14 +45,14 @@ if ( "TkCounterLoaded" in getroottable() ) {
 
         // Dispatch skips this module while disabled.
         function OnDisable() {
-            printl( "[Always] tk_counter disabled (counting and !tkc paused)" );
+            printl( "[MC] tk_counter disabled (counting and !tkc paused)" );
         },
 
         function OnEnable() {
-            printl( "[Always] tk_counter enabled" );
+            printl( "[MC] tk_counter enabled" );
         },
     };
 
     m._scope = scope;
-    ::AlwaysRegister( m );
+    ::McRegistry.Register( m );
 }

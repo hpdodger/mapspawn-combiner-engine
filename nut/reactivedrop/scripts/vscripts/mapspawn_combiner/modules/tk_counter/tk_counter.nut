@@ -1,15 +1,14 @@
 // TK Counter — core module (server-only).
-// IncludeScript( "tk_counter/tk_counter", worldspawn.GetScriptScope() )
+// IncludeScript( "mapspawn_combiner/modules/tk_counter/tk_counter", worldspawn.GetScriptScope() )
 //
 // Data next to this file:
-//   tk_counter/ranks.nut     — breakpoints + titles
-//   tk_counter/admins.nut    — !tkc_reset whitelist
-//   tk_counter/announce.nut  — red notice template + layout
+//   ranks.nut     — breakpoints + titles
+//   announce.nut  — red notice template + layout
+// Admin whitelist: ::McAuth in mapspawn_combiner/admins.nut
 
-IncludeScript( "tk_counter/version" )
-IncludeScript( "tk_counter/ranks" )
-IncludeScript( "tk_counter/admins" )
-IncludeScript( "tk_counter/announce" )
+IncludeScript( "mapspawn_combiner/modules/tk_counter/version" )
+IncludeScript( "mapspawn_combiner/modules/tk_counter/ranks" )
+IncludeScript( "mapspawn_combiner/modules/tk_counter/announce" )
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -509,17 +508,9 @@ TkPlayerFile <- function( id ) {
 }
 
 TkIsAdmin <- function( hPlayer ) {
-    local id = TkKey( hPlayer )
-    if ( id == null )
+    if ( !( "McAuth" in getroottable() ) )
         return false
-    foreach ( adminId in ::g_TkAdmins ) {
-        if ( adminId == null )
-            continue
-        local acc = TkAccountIdFromString( adminId.tostring() )
-        if ( acc != null && acc.tostring() == id )
-            return true
-    }
-    return false
+    return ::McAuth.IsAdmin( hPlayer )
 }
 
 // ── Persist ──────────────────────────────────────────────────────────────────
@@ -1247,4 +1238,4 @@ _OnPlayerSay <- function( params ) {
 local hTipWorld = Entities.FindByClassname( null, "worldspawn" )
 if ( hTipWorld != null )
     AddThinkToEnt( hTipWorld, "TkTipThink" )
-printl( "[TK Counter] module loaded" )
+
