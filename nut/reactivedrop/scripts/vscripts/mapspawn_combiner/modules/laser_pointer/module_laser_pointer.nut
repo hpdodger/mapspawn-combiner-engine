@@ -2,8 +2,8 @@
 // DRG-style laser pointer: an engine-rendered beam from your marine to your
 // crosshair, visible to every player — other clients need NO files. The beam
 // stops on enemies and teammates, not just walls. Firing while the pointer is
-// active "marks" the target: a glow flash at the spot plus a chat message with
-// the target's name and distance.
+// active "marks" the target: a glow flash at the spot. Optional chat line with
+// name and distance is off by default (mark_chat).
 //
 // Activation:
 //   chat:    laser  (or !laser)                 — toggle
@@ -18,7 +18,7 @@
 //   mark — env_sprite glow flash
 
 if ( "LaserPointerLoaded" in getroottable() ) {
-    printl( "[MC] laser_pointer: already loaded, skip" );
+    ::McLog.Info( "[MC] laser_pointer: already loaded, skip" );
 } else {
     getroottable().LaserPointerLoaded <- true;
 
@@ -531,7 +531,7 @@ local m = {
     ["mark_radius",    64,   "fallback target search radius at the endpoint",       { min = 16,   max = 256, step = 8 }],
     ["mark_cooldown",  1.0,  "minimum seconds between marks",                        { min = 0,    max = 5,   step = 0.1 }],
     ["mark_duration",  1.2,  "mark flash duration, seconds",                        { min = 0.2,  max = 5,   step = 0.1 }],
-    ["mark_chat",      1,    "1 = announce target name and distance in chat",       { kind = "bool" }],
+    ["mark_chat",      0,    "1 = announce ping target and distance in chat",       { kind = "bool" }],
     ["mark_particles", 0,    "1 = extra particle burst on mark (map-dependent)",    { kind = "bool" }],
     ["mark_on_fire",   0,    "1 = firing while active also marks",                  { kind = "bool" }],
     ["idle_ttl",       60,   "free an idle player's entities after N sec (0 = keep)", { min = 0,  max = 300, step = 10 }],

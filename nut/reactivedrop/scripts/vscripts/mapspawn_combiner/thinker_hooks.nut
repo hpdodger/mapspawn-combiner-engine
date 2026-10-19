@@ -37,7 +37,7 @@
         };
         AddThinkToEnt( e, "McThinkers_Update" );
         this.entity = e;
-        printl( "[MC] Update thinker spawned (interval " + this.UPDATE_INTERVAL + "s)" );
+        ::McLog.Info( "[MC] Update thinker spawned (interval " + this.UPDATE_INTERVAL + "s)" );
     },
 
     function BindHooks() {
@@ -71,7 +71,7 @@
                     if ( typeof r == "string" )
                         result = r;
                 } catch ( e ) {
-                    printl( "[MC] ERROR in " + m.name + ".AlterDeathMessage: " + e );
+                    ::McLog.Err( "[MC] ERROR in " + m.name + ".AlterDeathMessage: " + e );
                 }
             }
             return result;
@@ -87,7 +87,7 @@
                     if ( typeof r == "string" )
                         result = r;
                 } catch ( e ) {
-                    printl( "[MC] ERROR in " + m.name + ".OnReceivedTextMessage: " + e );
+                    ::McLog.Err( "[MC] ERROR in " + m.name + ".OnReceivedTextMessage: " + e );
                 }
             }
             return result;
@@ -95,6 +95,6 @@
 
         this.EnsureUpdateThinker();
 
-        printl( "[MC] thinker hooks bound" );
+        ::McLog.Info( "[MC] thinker hooks bound" );
     },
 };

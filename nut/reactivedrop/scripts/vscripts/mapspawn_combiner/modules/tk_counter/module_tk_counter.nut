@@ -4,7 +4,7 @@
 // Логика счётчика — в modules/tk_counter/*.nut (в script scope worldspawn).
 
 if ( "TkCounterLoaded" in getroottable() ) {
-    printl( "[MC] tk_counter: already loaded, skip" );
+    ::McLog.Info( "[MC] tk_counter: already loaded, skip" );
 } else {
     getroottable().TkCounterLoaded <- true;
 
@@ -45,11 +45,11 @@ if ( "TkCounterLoaded" in getroottable() ) {
 
         // Dispatch skips this module while disabled.
         function OnDisable() {
-            printl( "[MC] tk_counter disabled (counting and !tkc paused)" );
+            ::McLog.Info( "[MC] tk_counter disabled (counting and !tkc paused)" );
         },
 
         function OnEnable() {
-            printl( "[MC] tk_counter enabled" );
+            ::McLog.Info( "[MC] tk_counter enabled" );
         },
     };
 

@@ -28,6 +28,27 @@ enum HudPrint {
     Center  = 4,
 }
 
+// Цветной лог загрузки в игровой консоли (~).
+// printl сам по себе цвет не ставит; ClientPrint + коды Source (\x04 зелёный,
+// \x02 красный, \x05 оливковый) — тот же механизм, что у цветного чата.
+// Параллельно printl без кода — для dedicated / лог-файла.
+::McLog <- {
+    function Info( msg ) {
+        printl( msg );
+        ClientPrint( null, HudPrint.Console, "\x04" + msg );
+    },
+
+    function Warn( msg ) {
+        printl( msg );
+        ClientPrint( null, HudPrint.Console, "\x05" + msg );
+    },
+
+    function Err( msg ) {
+        printl( msg );
+        ClientPrint( null, HudPrint.Console, "\x02" + msg );
+    },
+};
+
 ::McRegistry <- {
     version         = 4,
     modules         = [],
@@ -36,7 +57,7 @@ enum HudPrint {
 
     function Register( m ) {
         if ( m == null || !( "name" in m ) || m.name == null || m.name == "" ) {
-            printl( "[MC] Register: module missing name" );
+            ::McLog.Err( "[MC] Register: module missing name" );
             return;
         }
         if ( !( "enabled" in m ) )
@@ -47,12 +68,12 @@ enum HudPrint {
             local msg = "[MC] WARNING: module " + m.name + " requires registry v"
                 + m.requires_registry + ", this is v" + this.version
                 + " — update mapspawn_combiner/registry.nut";
-            printl( msg );
+            ::McLog.Warn( msg );
             ClientPrint( null, HudPrint.Talk, msg );
         }
         foreach ( existing in this.modules ) {
             if ( existing.name == m.name ) {
-                printl( "[MC] Register: duplicate name \"" + m.name + "\", skip" );
+                ::McLog.Warn( "[MC] Register: duplicate name \"" + m.name + "\", skip" );
                 return;
             }
         }
@@ -62,7 +83,7 @@ enum HudPrint {
         local line = "[MC] registered module: " + m.name;
         if ( ( "version" in m ) && m.version != null && m.version != "" )
             line += "  v" + m.version;
-        printl( line );
+        ::McLog.Info( line );
     },
 
     function Dispatch( hookName ) {
@@ -72,7 +93,7 @@ enum HudPrint {
             try {
                 m[hookName]();
             } catch ( e ) {
-                printl( "[MC] ERROR in " + m.name + "." + hookName + ": " + e );
+                ::McLog.Err( "[MC] ERROR in " + m.name + "." + hookName + ": " + e );
             }
         }
     },
@@ -84,7 +105,7 @@ enum HudPrint {
             try {
                 m[hookName]( params );
             } catch ( e ) {
-                printl( "[MC] ERROR in " + m.name + "." + hookName + ": " + e );
+                ::McLog.Err( "[MC] ERROR in " + m.name + "." + hookName + ": " + e );
             }
         }
     },
@@ -111,7 +132,7 @@ enum HudPrint {
         try {
             m[hook]();
         } catch ( e ) {
-            printl( "[MC] ERROR in " + m.name + "." + hook + ": " + e );
+            ::McLog.Err( "[MC] ERROR in " + m.name + "." + hook + ": " + e );
         }
     },
 
@@ -188,7 +209,7 @@ enum HudPrint {
                 if ( typeof r == "integer" || typeof r == "float" )
                     damage = r;
             } catch ( e ) {
-                printl( "[MC] ERROR in " + m.name + ".OnTakeDamage_Alive_Any: " + e );
+                ::McLog.Err( "[MC] ERROR in " + m.name + ".OnTakeDamage_Alive_Any: " + e );
             }
         }
         return damage;

@@ -12,10 +12,10 @@ IncludeScript( "mapspawn_combiner/registry" );
 IncludeScript( "mapspawn_combiner/game_events" );
 IncludeScript( "mapspawn_combiner/thinker_hooks" );
 
-printl( "─────────────────────────────────────────" );
-printl( "  Mapspawn Combiner  registry v" + ::McRegistry.version );
-printl( "  Author: typical russian (https://steamcommunity.com/id/w_asd/)" );
-printl( "─────────────────────────────────────────" );
+::McLog.Info( "─────────────────────────────────────────" );
+::McLog.Info( "  Mapspawn Combiner  registry v" + ::McRegistry.version );
+::McLog.Info( "  Author: typical russian (https://steamcommunity.com/id/w_asd/)" );
+::McLog.Info( "─────────────────────────────────────────" );
 
 // Порядок = порядок раздачи. admin первым — чтобы им всегда можно было управлять остальными.
 IncludeScript( "mapspawn_combiner/modules/admin/module_admin" );

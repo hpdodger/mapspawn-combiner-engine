@@ -408,11 +408,11 @@ local m = {
         this._ensureDefaults();
         local n = this._loadApply( bSilentFlags );
         if ( n > 0 )
-            printl( this._PREFIX + "Applied " + n + " saved setting(s) from " + this._SETTINGS_FILE );
+            ::McLog.Info( this._PREFIX + "Applied " + n + " saved setting(s) from " + this._SETTINGS_FILE );
         else if ( n == 0 )
-            printl( this._PREFIX + "Settings file present, nothing to change." );
+            ::McLog.Info( this._PREFIX + "Settings file present, nothing to change." );
         else
-            printl( this._PREFIX + "No settings file yet (" + this._SETTINGS_FILE + ")." );
+            ::McLog.Info( this._PREFIX + "No settings file yet (" + this._SETTINGS_FILE + ")." );
         return n;
     },
 
@@ -473,4 +473,4 @@ m._CMDS = [
 ];
 
 ::McRegistry.Register( m );
-printl( "[MC] type !am_help for more info" );
+::McLog.Info( "[MC] type !am_help for more info" );

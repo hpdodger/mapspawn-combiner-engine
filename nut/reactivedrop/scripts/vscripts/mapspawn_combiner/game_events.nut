@@ -182,7 +182,7 @@
         // Не создавать замыкания здесь — только выставить уже готовые handlers.
         foreach ( hook, fn in this.handlers )
             getroottable()[hook] <- fn;
-        printl( "[MC] bound " + this.handlers.len() + " OnGameEvent_* dispatchers" );
+        ::McLog.Info( "[MC] bound " + this.handlers.len() + " OnGameEvent_* dispatchers" );
     },
 };
 ::McGameEvents.handlers["OnGameEvent_asw_mission_restart"] <- function( params ) { ::McRegistry.DispatchEvent( "OnGameEvent_asw_mission_restart", params ); };
