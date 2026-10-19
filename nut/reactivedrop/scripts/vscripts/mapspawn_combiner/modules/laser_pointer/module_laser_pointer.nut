@@ -26,7 +26,7 @@ local m = {
     name        = "laser_pointer",
     enabled     = true,
     convars     = {},
-    version     = "1.0.0",
+    version     = "1.0.7",
     description = "DRG-style laser pointer: a beam everyone sees. Check your console for key binding examples.",
 
     // Printed to the player's console by !am_info (chat is too narrow for binds).
@@ -68,6 +68,9 @@ local m = {
     // Engine assets, always shipped with the game (see asw_ammo.cpp / asw_tesla_trap.cpp)
     _MARKER_MODEL = "models/swarm/ammo/ammoassaultrifle.mdl",
     _FLASH_SPRITE = "sprites/glow01.vmt",
+    // Same string as the working offhand script. The particle file also
+    // contains "JumpJet_glow"; both are precached.
+    _TIP_EFFECT   = "jumpjet_glow",
 
     _COLORS = ["255 50 50", "0 220 255", "50 255 50", "255 220 0",
                "255 140 0", "255 50 255", "220 220 220", "160 50 255"],
@@ -160,18 +163,24 @@ local m = {
 
         return {
             slot = slot, active = false,
-            src = src, dst = dst, flash = flash,
+            src = src, dst = dst, flash = flash, tip = null,
             beam = null, beamOn = false,
+            tipStarted = -999.0,
             srcName = srcName, dstName = dstName,
             lastMark = -999.0, lastEnd = null, lastHit = null,
             lastActive = Time(),
+            lastBeamRefresh = 0.0,
         };
     },
 
+    // Markers always required. Beam may be null until first _ensureBeam while
+    // active; if it existed and died, force a full rebuild.
     function _entsValid(st) {
-        return st.src != null && st.src.IsValid()
-            && st.dst != null && st.dst.IsValid()
-            && st.flash != null && st.flash.IsValid();
+        if (st.src == null || !st.src.IsValid()) return false;
+        if (st.dst == null || !st.dst.IsValid()) return false;
+        if (st.flash == null || !st.flash.IsValid()) return false;
+        if (st.beam != null && !st.beam.IsValid()) return false;
+        return true;
     },
 
     function _getState(hPlayer) {
@@ -205,7 +214,7 @@ local m = {
     },
 
     function _destroyState(st) {
-        foreach (k in ["src", "dst", "flash", "beam"]) {
+        foreach (k in ["tip", "src", "dst", "flash", "beam"]) {
             if (st[k] != null && st[k].IsValid()) st[k].Destroy();
             st[k] = null;
         }
@@ -217,10 +226,17 @@ local m = {
     // ---------- env_beam ----------
 
     // Persistent server-side env_beam (life = 0). Both endpoints are entities
-    // WITH models, so the beam is networked once and every client tracks the
-    // marker positions frame-by-frame over the reliable entity channel — no
-    // per-tick temp entities (those get dropped on lossy connections).
+    // WITH models, so every client tracks the marker positions.
     // TurnOn/TurnOff only toggle EF_NODRAW; the endpoint binding is kept.
+    //
+    // env_beam is PVS-culled. For BEAM_ENTPOINT the server treats the beam
+    // origin as the start of that box. A beam left at the map origin drops
+    // out of everyone's PVS once the segment crosses more than two areas:
+    // the shaft vanishes and only the red end (where the line still clips
+    // into the room) remains. Parent once to the source marker, which is
+    // FL_EDICT_ALWAYS and already moves with the marine. Snap the beam onto
+    // that marker first so the local origin stays 0 — do not SetOrigin the
+    // beam again after that.
     function _ensureBeam(st) {
         if (st.beam != null && st.beam.IsValid()) return st.beam;
         local b = Entities.CreateByClassname("env_beam");
@@ -237,15 +253,57 @@ local m = {
         b.__KeyValueFromString("spawnflags", "1");           // StartOn
         b.Spawn();
         b.Activate();    // binds the (modeled => tracked) endpoint entities here
+        b.SetOrigin(st.src.GetOrigin());
+        b.SetParent(st.src);
+        if (b.GetMoveParent() == null)
+            ::McLog.Warn( "[LP] beam transmit parent failed (slot " + st.slot + ")" );
         st.beam = b;
         st.beamOn = true;
+        st.lastBeamRefresh = Time();
         return b;
+    },
+
+    function _refreshBeam(st) {
+        if (st.beam != null && st.beam.IsValid())
+            st.beam.Destroy();
+        st.beam = null;
+        st.beamOn = false;
+        this._ensureBeam(st);
     },
 
     function _beamOff(st) {
         if (st.beam != null && st.beam.IsValid() && st.beamOn)
             DoEntFire("!self", "TurnOff", "", 0, null, st.beam);
         st.beamOn = false;
+        this._tipOff(st);
+    },
+
+    function _tipOff(st) {
+        if (st.tip != null && st.tip.IsValid())
+            st.tip.Destroy();
+        st.tip = null;
+    },
+
+    // JumpJet_glow is a short burst and info_particle_system is sent to every
+    // client (FL_EDICT_ALWAYS). Do not parent it: SetParent keeps an entity
+    // that still sits at the map origin glued to 0,0,0, so nobody at the
+    // crosshair sees it. Place a fresh one on the hit point, like a ping.
+    function _placeTip(st, pos) {
+        local now = Time();
+        if (st.tip != null && st.tip.IsValid() && (now - st.tipStarted) < 0.5) {
+            st.tip.SetOrigin(pos);
+            return;
+        }
+        this._tipOff(st);
+        local p = Entities.CreateByClassname("info_particle_system");
+        p.__KeyValueFromString("effect_name", this._TIP_EFFECT);
+        p.SetOrigin(pos);
+        p.Spawn();
+        p.Activate();
+        DoEntFire("!self", "Start", "", 0, null, p);
+        DoEntFire("!self", "Kill", "", 1, null, p);
+        st.tip = p;
+        st.tipStarted = now;
     },
 
     // Fire an entity input on every existing beam — makes beam_width/beam_alpha
@@ -260,6 +318,7 @@ local m = {
     // ---------- activation ----------
 
     function _setActive(hPlayer, on, announce) {
+        ::McThinkers.EnsureUpdateThinker();
         local st = this._getState(hPlayer);
         if (st == null) { this._noSlots(hPlayer); return; }
         if (st.active == on) return;
@@ -279,9 +338,12 @@ local m = {
     // ---------- hooks ----------
 
     function OnGameplayStart() {
-        this.Cleanup();   // fresh round: drop stale handles, free all slots
+        // Soft rebuild: new marker/beam entities, keep who had laser ON.
+        this.Cleanup();
         PrecacheModel(this._MARKER_MODEL);
         PrecacheModel(this._FLASH_SPRITE);
+        PrecacheParticleSystem(this._TIP_EFFECT);
+        PrecacheParticleSystem("JumpJet_glow");
     },
 
     // admin calls this on !am_disable: hide everything we own. Active
@@ -437,7 +499,7 @@ local m = {
     // Legacy world-space burst. Off by default: these particle systems are not
     // loaded on every map (the glow flash always works, this is a bonus).
     function _particleBurst(pos) {
-        foreach (eff in ["jumpjet_glow", "explosion_sparks"]) {
+        foreach (eff in [this._TIP_EFFECT, "explosion_sparks"]) {
             local p = Entities.CreateByClassname("info_particle_system");
             p.__KeyValueFromString("effect_name", eff);
             p.__KeyValueFromString("start_active", "1");
@@ -473,7 +535,7 @@ local m = {
             st.lastActive = Time();
 
             if (!this._entsValid(st)) {
-                toHeal.append(hPlayer);   // a restart killed our entities mid-round
+                toHeal.append(hPlayer);
                 continue;
             }
 
@@ -500,25 +562,60 @@ local m = {
             st.src.SetOrigin(srcPos);
             st.dst.SetOrigin(dstPos);
 
+            local refresh = this.variables.beam_refresh.tofloat();
+            if (refresh > 0 && (Time() - st.lastBeamRefresh) >= refresh)
+                this._refreshBeam(st);
+
             local b = this._ensureBeam(st);
             if (!st.beamOn) {
                 DoEntFire("!self", "TurnOn", "", 0, null, b);
                 st.beamOn = true;
             }
+            this._placeTip(st, dstPos);
         }
 
-        foreach (p in toHeal) this._rebuildState(p, this._players[p]);
+        foreach (p in toHeal) {
+            ::McLog.Info( "[LP] rebuilding entities (slot "
+                + this._players[p].slot + ")" );
+            this._rebuildState(p, this._players[p]);
+        }
         foreach (p in toRemove) {
             this._destroyState(this._players[p]);
             this._players.rawdelete(p);
         }
     },
 
+    // Soft reset: drop old edicts, keep slot + active. Next Update recreates
+    // the beam for anyone who still has active=true. Hard wipe of _players
+    // (old behavior) made lasers stay off until a manual toggle after missions.
     function Cleanup() {
-        foreach (hPlayer, st in this._players) this._destroyState(st);
+        local kept = [];
+        foreach (hPlayer, st in this._players) {
+            if (hPlayer == null || !hPlayer.IsValid())
+                continue;
+            kept.append({
+                player = hPlayer,
+                slot   = st.slot,
+                active = st.active,
+            });
+            this._destroyState(st);
+        }
         this._players = {};
         this._slotOwner = array(8, null);
         this._nextUpdate = 0.0;
+
+        local nActive = 0;
+        foreach (e in kept) {
+            this._slotOwner[e.slot] = e.player;
+            local st = this._newState(e.player, e.slot);
+            st.active = e.active;
+            this._players[e.player] <- st;
+            if (e.active)
+                nActive++;
+        }
+        if (kept.len() > 0)
+            ::McLog.Info( "[LP] Cleanup: soft-rebuild " + kept.len()
+                + " player(s), " + nActive + " laser(s) still ON" );
     },
 };
 
@@ -535,6 +632,7 @@ local m = {
     ["mark_particles", 0,    "1 = extra particle burst on mark (map-dependent)",    { kind = "bool" }],
     ["mark_on_fire",   0,    "1 = firing while active also marks",                  { kind = "bool" }],
     ["idle_ttl",       60,   "free an idle player's entities after N sec (0 = keep)", { min = 0,  max = 300, step = 10 }],
+    ["beam_refresh",   0,    "recreate env_beam every N sec while on (0 = off)",    { min = 0,    max = 60,  step = 1 }],
     ["beam_width",     1.5,  "beam width, applies to existing beams instantly",     { min = 0.5,  max = 8,   step = 0.5 }],
     ["beam_alpha",     220,  "beam opacity 0-255, applies instantly",               { min = 0,    max = 255, step = 5 }],
 ]);

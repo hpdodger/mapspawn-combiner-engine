@@ -173,6 +173,7 @@ local m = {
 
     function _printHelp( hPlayer, szArgs ) {
         this._msg( hPlayer, "Mapspawn combiner module commands:" );
+        this._msgRaw( hPlayer, "  Author: typical russian (https://steamcommunity.com/id/w_asd/)" );
         foreach ( c in this._CMDS )
             this._msgRaw( hPlayer, "  " + c.cmd + c.args + " - " + c.help );
         this._msgRaw( hPlayer, "  Viewing is open; enable/disable/set/save/load/reset need mapspawn_combiner/admins.nut whitelist." );

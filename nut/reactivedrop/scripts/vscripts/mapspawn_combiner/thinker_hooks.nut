@@ -46,6 +46,10 @@
         };
 
         getroottable()["OnGameplayStart"] <- function() {
+            // asw_restart_mission deletes info_target (the Update thinker) and
+            // does not reload mapspawn. Respawn it before modules run, or
+            // every module's Update stays dead until a full map change.
+            ::McThinkers.EnsureUpdateThinker();
             ::McRegistry.Dispatch( "OnGameplayStart" );
         };
 
