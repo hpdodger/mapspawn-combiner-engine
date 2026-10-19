@@ -26,7 +26,7 @@ local m = {
     name        = "laser_pointer",
     enabled     = true,
     convars     = {},
-    version     = "1.0.10",
+    version     = "1.0.11",
     description = "DRG-style laser pointer: a beam everyone sees. Check your console for key binding examples.",
 
     // Printed to the player's console by !am_info (chat is too narrow for binds).
@@ -134,7 +134,11 @@ local m = {
         local e = Entities.CreateByClassname("rd_hud_vscript");
         e.__KeyValueFromString("targetname", targetname);
         e.__KeyValueFromInt("rendermode", 10);   // kRenderNone — the model is never drawn
-        e.__KeyValueFromInt("effects", 272);     // EF_NOSHADOW | EF_NORECEIVESHADOW
+        // EF_NOSHADOW | EF_NOINTERP. Without NOINTERP the client slides a
+        // freshly spawned marker in from the map origin (reads as "the end
+        // starts off to the left, then catches the crosshair") after
+        // asw_restart_mission recreates the endpoints.
+        e.__KeyValueFromInt("effects", 280);
         e.Spawn();
         e.Activate();
         e.SetModel(this._MARKER_MODEL);
@@ -170,7 +174,35 @@ local m = {
             lastMark = -999.0, lastEnd = null, lastHit = null,
             lastActive = Time(),
             lastBeamRefresh = 0.0,
+            // First Update only moves the markers. The beam appears on the
+            // next one, so the client never draws the end at the map origin.
+            endsReady = false,
         };
+    },
+
+    // Marine + crosshair, clipped like the beam. Null when there is no marine.
+    function _aimPoints(hPlayer) {
+        local hMarine = hPlayer.GetMarine();
+        if (hMarine == null || !hMarine.IsValid()) return null;
+        local srcPos = hMarine.GetOrigin() + Vector(0, 0, this.variables.src_height.tofloat());
+        local dstPos = hPlayer.GetCrosshairTracePos();
+        local t = this._trace;
+        t.ignore <- hMarine;
+        ScriptTraceLineTable(t, srcPos, dstPos, this._VEC_ZERO, this._VEC_ZERO);
+        return {
+            src = srcPos,
+            dst = t.pos,
+            hit = t.enthit,
+            normal = ("normal" in t) ? t.normal : this._VEC_ZERO,
+        };
+    },
+
+    function _snapEnds(st, aim) {
+        st.src.SetOrigin(aim.src);
+        st.dst.SetOrigin(aim.dst);
+        st.lastEnd = aim.dst;
+        local hit = aim.hit;
+        st.lastHit = (hit != null && hit.IsValid() && hit.GetClassname() != "worldspawn") ? hit : null;
     },
 
     // Markers always required. Beam may be null until first _ensureBeam while
@@ -200,6 +232,8 @@ local m = {
         if (slot < 0) return null;
         this._slotOwner[slot] = hPlayer;
         local st = this._newState(hPlayer, slot);
+        local aim = this._aimPoints(hPlayer);
+        if (aim != null) this._snapEnds(st, aim);
         this._players[hPlayer] <- st;
         return st;
     },
@@ -208,6 +242,8 @@ local m = {
         this._destroyState(stOld);
         local st = this._newState(hPlayer, stOld.slot);
         st.active = stOld.active;
+        local aim = this._aimPoints(hPlayer);
+        if (aim != null) this._snapEnds(st, aim);
         this._slotOwner[stOld.slot] = hPlayer;
         this._players[hPlayer] <- st;
         return st;
@@ -534,32 +570,22 @@ local m = {
                 continue;
             }
 
-            local hMarine = hPlayer.GetMarine();
-            if (hMarine == null || !hMarine.IsValid()) {
+            local aim = this._aimPoints(hPlayer);
+            if (aim == null) {
                 this._beamOff(st);        // hidden while dead; auto-resumes on respawn
                 continue;
             }
+            this._snapEnds(st, aim);
 
-            local srcPos = hMarine.GetOrigin() + Vector(0, 0, this.variables.src_height.tofloat());
-            local dstPos = hPlayer.GetCrosshairTracePos();
+            // Fresh markers (restart, first toggle) sit at the map origin until
+            // this tick. Skip the beam once so the client gets the real end
+            // before anything is drawn.
+            if (!st.endsReady) {
+                st.endsReady = true;
+                continue;
+            }
 
-            // Clip against world AND characters (default mask is
-            // MASK_VISIBLE_AND_NPCS): the beam stops on aliens and marines like
-            // the DRG pointer, and the hit entity names the mark target.
-            local t = this._trace;
-            t.ignore <- hMarine;
-            ScriptTraceLineTable(t, srcPos, dstPos, this._VEC_ZERO, this._VEC_ZERO);
-            dstPos = t.pos;
-            local hit = t.enthit;
-            st.lastHit = (hit != null && hit.IsValid() && hit.GetClassname() != "worldspawn") ? hit : null;
-            st.lastEnd = dstPos;
-
-            local tipPos = dstPos;
-            if ("normal" in t)
-                tipPos = dstPos + t.normal * 8;
-
-            st.src.SetOrigin(srcPos);
-            st.dst.SetOrigin(dstPos);
+            local tipPos = aim.dst + aim.normal * 8;
 
             local refresh = this.variables.beam_refresh.tofloat();
             if (refresh > 0 && (Time() - st.lastBeamRefresh) >= refresh)
@@ -608,6 +634,8 @@ local m = {
             this._slotOwner[e.slot] = e.player;
             local st = this._newState(e.player, e.slot);
             st.active = e.active;
+            local aim = this._aimPoints(e.player);
+            if (aim != null) this._snapEnds(st, aim);
             this._players[e.player] <- st;
             if (e.active)
                 nActive++;
