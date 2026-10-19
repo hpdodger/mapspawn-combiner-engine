@@ -1,10 +1,7 @@
 // always/module_tk_counter.nut
-// Always-on module wrapper for TK Counter.
-// Expects always/registry.nut already loaded by mapspawn.
-// Core logic lives in tk_counter/*.nut (loaded into worldspawn script scope).
-//
-// Shape matches challenge/laser-pointer modules: name/enabled/convars/description,
-// hooks as function slots on the table, optional AlwaysDeclareVariables, then AlwaysRegister.
+// Модуль счётчика тимкиллов для always-on шины.
+// Реестр уже должен быть загружен mapspawn.
+// Логика счётчика — в tk_counter/*.nut (в script scope worldspawn).
 
 if ( "TkCounterLoaded" in getroottable() ) {
     printl( "[Always] tk_counter: already loaded, skip" );
@@ -32,8 +29,8 @@ if ( "TkCounterLoaded" in getroottable() ) {
         description = "Teamkill counter, ranks, !tkc commands.",
         requires_registry = 3,
 
-        // Assigned from the local `scope` below before AlwaysRegister
-        // (upvalue capture is unreliable in VScript — same pattern as ShotAnnouncer._messages).
+        // Заполняется ниже перед AlwaysRegister: вложенные function
+        // в VScript плохо держат внешние local, поэтому поле таблицы.
         _scope = null,
 
         function OnGameEvent_entity_killed( params ) {

@@ -1,19 +1,17 @@
 // always/module_chat_admin.nut
-// Chat commands for managing always-on modules at runtime. Prefix: !ao_
+// Чат-команды управления always-on модулями. Префикс: !ao_
 //
-// Mirrors challenge module_chat_admin / laser-pointer module shape:
-//   name, enabled, convars, description, private fields, function hooks,
-//   _CMDS table as single source for parser + help.
+// Просмотр (help / modules / info / vars) — всем.
+// Изменения (enable / disable / set / save / load / reset) — whitelist в always/admins.nut.
+// Сам себя выключить нельзя; в файле настроек тоже не пишется как выключенный.
 //
-// Viewing (help/modules/info/vars): everyone.
-// Changing state (enable/disable/set/save/load/reset): ::g_AlwaysAdmins whitelist.
-// chat_admin cannot disable itself and is never persisted off.
-//
-// Settings file (server-wide): save/vscripts/always/settings.txt
+// Файл на весь сервер: save/vscripts/always/settings.txt
 //   ModuleName.__enabled=0|1
 //   ModuleName.varName=value
-// Explicit !ao_save / !ao_load / !ao_reset (no autosave).
-// mapspawn calls ApplySavedSettings(true) after all modules register.
+// Явные !ao_save / !ao_load / !ao_reset (без автосохранения).
+// mapspawn после регистрации модулей зовёт ApplySavedSettings(true).
+//
+// Таблица _CMDS — единый список для парсера и справки.
 
 IncludeScript( "always/admins" );
 
@@ -115,7 +113,7 @@ local m = {
     // ---------- commands (uniform signature: hPlayer, szArgs) ----------
 
     function _printHelp( hPlayer, szArgs ) {
-        this._msg( hPlayer, "Always-on combiner chat commands:" );
+        this._msg( hPlayer, "Always-on module commands:" );
         foreach ( c in this._CMDS )
             this._msgRaw( hPlayer, "  " + c.cmd + c.args + " - " + c.help );
         this._msgRaw( hPlayer, "  Viewing is open; enable/disable/set/save/load/reset need always/admins.nut whitelist." );

@@ -1,14 +1,13 @@
 // always/game_events.nut
-// Root OnGameEvent_* dispatchers for the always-on combiner.
+// Корневые OnGameEvent_* → AlwaysDispatchEvent.
 //
-// Source of truth in the engine:
-//   g_ScriptGameEventList[] in ScriptGameEventListener.cpp
-//   (NUM_SCRIPT_GAME_EVENTS = 156; achievement_earned is listed twice there —
-//   we bind each unique name once).
+// Список имён — из g_ScriptGameEventList в ScriptGameEventListener.cpp
+// (в массиве движка 156 записей, achievement_earned дважды; здесь каждое
+// уникальное имя один раз).
 //
-// Modules subscribe by defining the matching function slot, e.g.
+// Модуль подписывается слотом, например:
 //   function OnGameEvent_entity_killed(params) { ... }
-// mapspawn binds every name to AlwaysDispatchEvent; unused events are cheap no-ops.
+// mapspawn вешает все имена; незаявленные у модулей просто ничего не делают.
 
 ::g_AlwaysGameEventNames <- [
     "asw_mission_restart",

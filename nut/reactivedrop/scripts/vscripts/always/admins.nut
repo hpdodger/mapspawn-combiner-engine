@@ -1,12 +1,12 @@
-// Always-on combiner — SteamIDs allowed to !ao_enable / !ao_disable.
-// Familiar form from `status` / SourceMod: "STEAM_1:0:12345678"
+// SteamID с правом на !ao_enable / !ao_disable / !ao_save и т.п.
+// Формат как в status: "STEAM_1:0:12345678"
 
 ::g_AlwaysAdmins <- [
     // "STEAM_1:0:12345678",
     "STEAM_1:1:15246122",
 ]
 
-// ── Steam account helpers (self-contained; do not depend on tk_counter) ──────
+// ── Разбор SteamID (свой код, без зависимости от других модулей) ─────────────
 
 ::_AlwaysTrimSpaces <- function( s ) {
     if ( s == null )

@@ -1,26 +1,24 @@
 // always/thinker_hooks.nut
-// Non-game-event VScript hooks that the engine resolves via
-// CAlienSwarm::RunScriptFunctionInListenerScopes (root first, then challenge thinkers).
+// Служебные хуки движка (не game event): OnMissionStart, OnGameplayStart,
+// UserConsoleCommand, UserMenuSelect, OnTakeDamage_Alive_Any, AlterDeathMessage,
+// OnReceivedTextMessage, Update, Cleanup.
 //
-// Declared on the challenge thinker scope as NULL placeholders in
-// asw_gamerules_vscript.cpp so they are NOT inherited from root (issue #138).
-// Defining them here on root therefore runs for always-on without double-firing
-// challenge modules.
+// Движок ищет такие функции сначала в корне VM, потом в скрипте активного
+// челленджа. Здесь они объявляются в корне, чтобы always-on модули получали
+// вызовы при любом челлендже. У скрипта челленджа свои копии имён в своей
+// области — один и тот же модуль дважды не вызывается.
 //
-// Hooks:
-//   OnMissionStart()
-//   OnGameplayStart()
-//   UserConsoleCommand(player, value)   → modules: UserConsoleCommand({ player, value })
-//   UserMenuSelect(player, slot)        → modules: UserMenuSelect({ player, slot })
-//   OnTakeDamage_Alive_Any(...)         → ::AlwaysDispatchDamage (return overwrites damage)
-//   AlterDeathMessage(...)              → last string returned by a module wins
-//   OnReceivedTextMessage(client, player, text) → threaded string transform
-//   Update()                            → via dedicated thinker entity (not ListenerScopes)
-//   Cleanup                             → AlwaysDispatch on mission_success / mission_failed
+// UserConsoleCommand / UserMenuSelect: движок передаёт два аргумента;
+// модулям отдаётся одна таблица { player, value } / { player, slot }.
+// OnTakeDamage_Alive_Any: return через AlwaysDispatchDamage переписывает урон.
+// AlterDeathMessage: побеждает последняя строка от модуля.
+// OnReceivedTextMessage: строка проходит по цепочке модулей.
+// Update: отдельная сущность always_on_thinker (не через ListenerScopes).
+// Cleanup: после раздачи mission_success / mission_failed.
 //
-// Expects always/registry.nut already loaded.
+// Нужен уже загруженный always/registry.nut.
 
-const ALWAYS_UPDATE_INTERVAL = 0.05;   // 20 Hz, same default as laser-pointer challenge Update
+const ALWAYS_UPDATE_INTERVAL = 0.05;   // ~20 раз в секунду
 
 ::AlwaysEnsureUpdateThinker <- function() {
     if ( ( "g_AlwaysThinker" in getroottable() )
@@ -42,7 +40,6 @@ const ALWAYS_UPDATE_INTERVAL = 0.05;   // 20 Hz, same default as laser-pointer c
 };
 
 ::AlwaysBindThinkerHooks <- function() {
-    // ── lifecycle (no args) ──────────────────────────────────────────────────
     getroottable()["OnMissionStart"] <- function() {
         ::AlwaysDispatch( "OnMissionStart" );
     };
@@ -51,8 +48,6 @@ const ALWAYS_UPDATE_INTERVAL = 0.05;   // 20 Hz, same default as laser-pointer c
         ::AlwaysDispatch( "OnGameplayStart" );
     };
 
-    // ── scripted_user_func / menuselect ──────────────────────────────────────
-    // Engine signature is two args; modules get one table (same idea as challenge combiner).
     getroottable()["UserConsoleCommand"] <- function( hPlayer, szValue ) {
         ::AlwaysDispatchEvent( "UserConsoleCommand", { player = hPlayer, value = szValue } );
     };
@@ -61,12 +56,10 @@ const ALWAYS_UPDATE_INTERVAL = 0.05;   // 20 Hz, same default as laser-pointer c
         ::AlwaysDispatchEvent( "UserMenuSelect", { player = hPlayer, slot = slot } );
     };
 
-    // ── damage (return value overwrites flDamage) ────────────────────────────
     getroottable()["OnTakeDamage_Alive_Any"] <- function( victim, inflictor, attacker, weapon, damage, damageType, ammoName ) {
         return ::AlwaysDispatchDamage( victim, inflictor, attacker, weapon, damage, damageType, ammoName );
     };
 
-    // ── death message (return string to replace default FF death line) ───────
     getroottable()["AlterDeathMessage"] <- function( victim, inflictor, attacker, weapon, damage, damageType, ammoName ) {
         local result = null;
         foreach ( m in ::g_AlwaysModules ) {
@@ -83,7 +76,6 @@ const ALWAYS_UPDATE_INTERVAL = 0.05;   // 20 Hz, same default as laser-pointer c
         return result;
     };
 
-    // ── chat text transform (must return a string; engine skips non-cstring) ─
     getroottable()["OnReceivedTextMessage"] <- function( client, player, text ) {
         local result = text;
         foreach ( m in ::g_AlwaysModules ) {
@@ -100,10 +92,8 @@ const ALWAYS_UPDATE_INTERVAL = 0.05;   // 20 Hz, same default as laser-pointer c
         return result;
     };
 
-    // ── Update tick (own entity; challenge thinker Update is separate) ───────
     ::AlwaysEnsureUpdateThinker();
 
-    // ── Cleanup convention on mission end (after game-event fan-out) ─────────
     foreach ( ev in [ "mission_success", "mission_failed" ] ) {
         local hook = "OnGameEvent_" + ev;
         local prev = null;

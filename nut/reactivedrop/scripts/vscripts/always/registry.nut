@@ -1,18 +1,15 @@
 // always/registry.nut
-// Always-on module registry for mapspawn (not challenge combiner).
+// Реестр always-on модулей. Подключается один раз из mapspawn.nut.
+// Модули этот файл сами не подключают — он уже должен быть загружен.
 //
-// Include only from mapspawn.nut, once.
-// Modules do not include this file — they expect it already loaded.
-//
-// Module shape mirrors challenge combine_registry / laser-pointer modules:
+// Вид модуля:
 //   local m = {
-//       name, enabled, convars, description, requires_registry?,
-//       // private fields…
+//       name, enabled, convars, version, description, requires_registry?,
 //       function OnGameEvent_*(params) { … },
 //       function OnEnable() { … },
 //       function OnDisable() { … },
 //   };
-//   ::AlwaysDeclareVariables(m, [[name, default, help, meta?], …]);  // optional
+//   ::AlwaysDeclareVariables(m, [[name, default, help, meta?], …]);  // по желанию
 //   ::AlwaysRegister(m);
 //
 // API:
@@ -24,13 +21,11 @@
 //   ::AlwaysDeclareVariables(m, decls)
 //   ::AlwaysApplyVariable(mod, varName, valStr)
 //   ::AlwaysApplyConvars()
-//   ::AlwaysDispatchDamage(...)     — OnTakeDamage_Alive_Any pipeline (v4)
-//
-// Separate from challenge ::RegisterModule / ::Dispatch (different lifetime).
+//   ::AlwaysDispatchDamage(...)   — конвейер OnTakeDamage_Alive_Any (v4)
 //
 // v1: register + dispatch
 // v2: AlwaysSetEnabled / AlwaysFindModule
-// v3: HudPrint, convars, AlwaysDeclareVariables / AlwaysApplyVariable / AlwaysApplyConvars
+// v3: HudPrint, convars, DeclareVariables / ApplyVariable / ApplyConvars
 // v4: AlwaysDispatchDamage
 
 ::ALWAYS_REGISTRY_VERSION <- 4;
@@ -123,7 +118,7 @@ enum HudPrint {
     }
 };
 
-// Same contract as ::CC_DeclareVariables in the challenge combiner.
+// Объявить настраиваемые переменные модуля (для !ao_vars / !ao_set).
 ::AlwaysDeclareVariables <- function( m, decls ) {
     m.variables       <- {};
     m.variables_help  <- {};
@@ -138,7 +133,7 @@ enum HudPrint {
     }
 };
 
-// Returns null when stored, "notfound", or "rejected".
+// Вернёт null если записали, "notfound" или "rejected".
 ::AlwaysApplyVariable <- function( mod, varName, valStr ) {
     if ( !( "variables" in mod ) || !( varName in mod.variables ) )
         return "notfound";
@@ -185,8 +180,8 @@ enum HudPrint {
     }
 };
 
-// Damage pipeline (same contract as challenge ::DispatchDamage).
-// Threads `damage` through every enabled module; non-number / throw leaves it unchanged.
+// Прогон урона по включённым модулям. Числовой return заменяет damage;
+// исключение или не-число оставляют текущее значение.
 ::AlwaysDispatchDamage <- function( victim, inflictor, attacker, weapon, damage, damageType, ammoName ) {
     foreach ( m in ::g_AlwaysModules ) {
         if ( !m.enabled || !( "OnTakeDamage_Alive_Any" in m ) )

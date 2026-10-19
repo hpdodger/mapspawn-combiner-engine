@@ -1,98 +1,104 @@
-# Always-on mapspawn combiner
+# Always-on mapspawn
 
-Диспетчер always-on модулей для ASRD: один `mapspawn.nut`, реестр, модули в `always/`.  
-Не путать с challenge combiner (`combine_registry` / `rd_challenge`).
+Серверные VScript-модули, которые работают на каждой карте через `mapspawn.nut`  
+(нужен `sv_mapspawn_nut_exec 1`). Не зависят от выбранного челленджа.
 
-## Layout
+## Состав
 
 ```
 nut/reactivedrop/
-  cfg/autoexec.cfg                 # sv_mapspawn_nut_exec 1
+  cfg/autoexec.cfg
   scripts/vscripts/
-    mapspawn.nut                   # load registry + modules, fan-out events
+    mapspawn.nut              — вход: загрузка и раздача событий
     always/
-      registry.nut                 # AlwaysRegister / DeclareVariables / convars / Dispatch / DispatchDamage
-      game_events.nut              # all g_ScriptGameEventList → AlwaysDispatchEvent
-      thinker_hooks.nut            # OnGameplayStart, Update, damage, … → AlwaysDispatch*
-      admins.nut                   # !ao_enable whitelist
-      module_chat_admin.nut        # !ao_* (load first)
-      module_tk_counter.nut
-    tk_counter/                    # TK Counter core (from asrd_tk_counter)
+      registry.nut            — реестр модулей
+      game_events.nut         — игровые OnGameEvent_*
+      thinker_hooks.nut       — OnGameplayStart, Update, урон и т.п.
+      admins.nut              — SteamID для !ao_enable / !ao_save …
+      module_chat_admin.nut   — команды !ao_*
+      module_tk_counter.nut   — подключение счётчика тимкиллов
+    tk_counter/               — логика счётчика тимкиллов
 ```
 
-## How it works
+## Как это работает
 
-1. Engine runs `mapspawn` when `sv_mapspawn_nut_exec 1`.
-2. `mapspawn` includes `always/registry` + `game_events` + `thinker_hooks`, then each `always/module_*.nut`.
-3. Modules use the laser-pointer table shape and call `::AlwaysRegister(m)`.
-4. After includes, `::AlwaysApplyConvars()` applies module `convars`.
-5. `::AlwaysBindGameEventDispatchers()` installs root `OnGameEvent_*` for every unique name from engine `g_ScriptGameEventList` (155; source lists `achievement_earned` twice).
-6. `::AlwaysBindThinkerHooks()` installs the non-event engine hooks on root (see below) plus an `info_target` thinker for `Update`.
-7. Modules subscribe by defining the matching slot. Unused hooks are cheap no-ops in dispatch.
-8. Disabled modules are skipped. `::AlwaysSetEnabled` flips the flag and calls `OnEnable` / `OnDisable`.
+1. При старте карты движок выполняет `mapspawn.nut`.
+2. Подключаются реестр, списки хуков и модули.
+3. Каждый модуль вызывает `::AlwaysRegister(m)`.
+4. `::AlwaysApplyConvars()` выставляет convars из модулей.
+5. Из файла настроек (если есть) тихо подтягиваются вкл/выкл и переменные.
+6. На каждое игровое событие и служебный хук вызывается раздача по модулям.
+7. Выключенный модуль события не получает.
+8. `::AlwaysSetEnabled` меняет флаг и при необходимости зовёт `OnEnable` / `OnDisable`.
 
-### Thinker / lifecycle hooks (always-on root)
+Модуль подписывается только на нужные слоты, например  
+`function OnGameEvent_entity_killed(params) { … }`.
 
-| Root function | Module slot | Notes |
+### Служебные хуки (не game event)
+
+| Функция в корне | Слот у модуля | Заметки |
 |---|---|---|
-| `OnMissionStart` | `OnMissionStart` | no args |
-| `OnGameplayStart` | `OnGameplayStart` | no args |
-| `UserConsoleCommand` | `UserConsoleCommand` | engine `(player, value)` → module `{ player, value }` |
-| `UserMenuSelect` | `UserMenuSelect` | engine `(player, slot)` → module `{ player, slot }` |
-| `OnTakeDamage_Alive_Any` | `OnTakeDamage_Alive_Any` | via `AlwaysDispatchDamage`; return overwrites damage |
-| `AlterDeathMessage` | `AlterDeathMessage` | last returned string wins |
-| `OnReceivedTextMessage` | `OnReceivedTextMessage` | threaded string transform; must stay a string |
-| *(thinker entity)* | `Update` | 20 Hz (`info_target` `always_on_thinker`); return interval ignored at module level |
-| *(mission_success/failed)* | `Cleanup` | dispatched after the game-event fan-out |
+| `OnMissionStart` | `OnMissionStart` | без аргументов |
+| `OnGameplayStart` | `OnGameplayStart` | без аргументов |
+| `UserConsoleCommand` | `UserConsoleCommand` | модуль получает `{ player, value }` |
+| `UserMenuSelect` | `UserMenuSelect` | модуль получает `{ player, slot }` |
+| `OnTakeDamage_Alive_Any` | `OnTakeDamage_Alive_Any` | через `AlwaysDispatchDamage`; return меняет урон |
+| `AlterDeathMessage` | `AlterDeathMessage` | побеждает последняя вернувшаяся строка |
+| `OnReceivedTextMessage` | `OnReceivedTextMessage` | цепочка строк |
+| (отдельная сущность) | `Update` | ~20 раз в секунду |
+| после `mission_success` / `mission_failed` | `Cleanup` | после раздачи самого game event |
 
-Challenge thinkers still get their own copies of these hooks (engine nulls them on thinker scope so root is not inherited). Always-on runs from root; challenge modules run from the thinker — no double call into the same module table.
+Эти имена движок также может вызывать у скрипта активного челленджа. Здесь они объявлены в корне `mapspawn`, чтобы always-on модули работали всегда. Со скриптом челленджа это разные области видимости: один модуль дважды не вызывается.
 
-## Modules
+Список игровых событий — в `always/game_events.nut` (по `g_ScriptGameEventList` в исходниках игры). Если в новой версии игры появятся новые имена — обновить этот файл.
 
-| Module | Commands / notes |
+## Модули
+
+| Модуль | Команды |
 |---|---|
-| `chat_admin` | `!ao_*` — modules / info / vars / enable / disable / set (load first; cannot disable itself) |
-| `tk_counter` | `!tkc*` — same as asrd_tk_counter; saves under `save/vscripts/tk_counter/` |
+| `chat_admin` | `!ao_*` — список, вкл/выкл, переменные, save/load (грузится первым; себя выключить нельзя) |
+| `tk_counter` | `!tkc*` — счётчик тимкиллов; сейвы в `save/vscripts/tk_counter/` |
 
-### Runtime admin (`!ao_`)
+### Команды `!ao_`
 
-| Command | Who | Effect |
+| Команда | Кто | Что делает |
 |---|---|---|
-| `!ao_help` | everyone | command list |
-| `!ao_modules` | everyone | `[ON]`/`[OFF]` list |
-| `!ao_info <module>` | everyone | description |
-| `!ao_vars <module>` | everyone | tunables from `AlwaysDeclareVariables` |
-| `!ao_enable <module>` | whitelist | turn on + `OnEnable` (RAM until save) |
-| `!ao_disable <module>` | whitelist | turn off + `OnDisable` (RAM until save) |
-| `!ao_set <module> <var> <value>` | whitelist | change a tunable (RAM until save) |
-| `!ao_save` | whitelist | write `save/vscripts/always/settings.txt` |
-| `!ao_load` | whitelist | re-apply file (with OnEnable/OnDisable) |
-| `!ao_reset` | whitelist | compile-time defaults + clear file |
+| `!ao_help` | все | справка |
+| `!ao_modules` | все | список `[ON]`/`[OFF]` и версии |
+| `!ao_info <module>` | все | описание |
+| `!ao_vars <module>` | все | переменные модуля |
+| `!ao_enable <module>` | whitelist | включить (в RAM, пока не save) |
+| `!ao_disable <module>` | whitelist | выключить (в RAM, пока не save) |
+| `!ao_set <module> <var> <value>` | whitelist | переменная (в RAM, пока не save) |
+| `!ao_save` | whitelist | записать `save/vscripts/always/settings.txt` |
+| `!ao_load` | whitelist | применить файл (с `OnEnable`/`OnDisable`) |
+| `!ao_reset` | whitelist | значения из кода + очистить файл |
 
-Whitelist: `always/admins.nut` (`::g_AlwaysAdmins`, `STEAM_1:Y:Z`).  
-Prefix `!ao_` does not clash with challenge `!cc_` or TK `!tkc`.
+Whitelist: `always/admins.nut` (`STEAM_1:Y:Z`).
 
-### Settings file
+Префикс `!ao_` не пересекается с командами счётчика `!tkc`.
 
-Path: `save/vscripts/always/settings.txt` (one file for the whole server).
+### Файл настроек
+
+`save/vscripts/always/settings.txt` — один на весь сервер:
 
 ```text
 tk_counter.__enabled=0
 SomeMod.cooldown=3.0
 ```
 
-- `chat_admin` is never written/loaded as disabled.
-- After all modules register, `mapspawn` calls `ApplySavedSettings(true)` (silent flags).
-- `!ao_enable` / `!ao_set` stay in RAM until `!ao_save`.
+- `chat_admin` из файла не выключается.
+- После регистрации модулей настройки подтягиваются без вызова `OnEnable`/`OnDisable`.
+- `!ao_enable` / `!ao_set` живут в памяти, пока не сделан `!ao_save`.
 
-### Module shape (same idea as laser pointer)
+### Как выглядит модуль
 
 ```squirrel
 local m = {
     name        = "Example",
     enabled     = true,
     convars     = {},
-    version     = "1.0.0",   // shown by !ao_modules / !ao_info
+    version     = "1.0.0",
     description = "…",
     requires_registry = 4,
 
@@ -109,17 +115,19 @@ local m = {
 ::AlwaysRegister(m);
 ```
 
-Ядро TK скопировано из `asrd_tk_counter`. Логику счётчика править там и переносить сюда, либо считать эту копию деплой-деревом.
+Поле `requires_registry` — минимальная версия `always/registry.nut`, с которой модуль рассчитан работать. Если на сервере реестр старше, в лог будет предупреждение.
 
-## Add a module
+Логика счётчика тимкиллов лежит в `tk_counter/`. Правки счётчика — там; `module_tk_counter.nut` только регистрирует его в шине.
 
-1. Put logic under `scripts/vscripts/<name>/` (or a single file).
-2. Add `always/module_<name>.nut` in LP module shape; define only the `OnGameEvent_*` slots you need.
-3. Add one `IncludeScript( "always/module_<name>" )` line in `mapspawn.nut`.
-4. Event list lives in `always/game_events.nut` — refresh from `ScriptGameEventListener.cpp` if the engine adds names.
+## Добавить модуль
 
-## Install
+1. Код — в `scripts/vscripts/<имя>/` или в одном файле.
+2. Файл `always/module_<имя>.nut`: таблица модуля, нужные хуки, `::AlwaysRegister`.
+3. Одна строка `IncludeScript( "always/module_<имя>" )` в `mapspawn.nut`.
 
-Copy `nut/reactivedrop/` into the game/dedicated tree. Enable `sv_mapspawn_nut_exec 1`.
+## Установка
 
-If another always-on `mapspawn.nut` already exists, replace it with this dispatcher (or merge only the IncludeScript + event stubs). Do not stack old TK `mapspawn.merge-snippet` on top — TK is already a module here.
+Скопировать `nut/reactivedrop/` в дерево игры или dedicated-сервера.  
+Включить `sv_mapspawn_nut_exec 1`.
+
+На сервере должен быть **один** такой `mapspawn.nut`. Если уже был другой — заменить этим или вручную перенести в него загрузку модулей. Не держать параллельно второй полный `mapspawn` только ради счётчика тимкиллов: он уже подключён как модуль.
