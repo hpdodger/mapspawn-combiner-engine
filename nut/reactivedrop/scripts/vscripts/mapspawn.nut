@@ -21,6 +21,7 @@ IncludeScript( "mapspawn_combiner/thinker_hooks" );
 IncludeScript( "mapspawn_combiner/modules/admin/module_admin" );
 IncludeScript( "mapspawn_combiner/modules/tk_counter/module_tk_counter" );
 IncludeScript( "mapspawn_combiner/modules/laser_pointer/module_laser_pointer" );
+IncludeScript( "mapspawn_combiner/modules/legacy_chat/module_legacy_chat" );
 
 // Файл настроек сервера (тихие флаги enabled — без OnEnable/OnDisable).
 local _mcAdmin = ::McRegistry.FindModule( "admin" );

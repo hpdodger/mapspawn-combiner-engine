@@ -6,9 +6,9 @@
 // name and distance is off by default (mark_chat).
 //
 // Activation:
-//   chat:    laser  (or !laser)                 — toggle
-//   console: scripted_user_func laser           — toggle without chat spam (bindable)
-//            scripted_user_func laser_on / laser_off — for hold-style +/- aliases
+//   chat:    laser / !laser / /laser            — help (does not turn the beam on)
+//   console: scripted_user_func laser_on / laser_off — hold-style +/- aliases
+// The beam cannot stay on: it turns off on release, and also after max_hold seconds.
 //
 // Tunables: !am_vars / !am_set / !am_disable / !am_enable (admin module).
 // Mutating commands need the mapspawn_combiner/admins.nut / McAuth whitelist.
@@ -26,16 +26,17 @@ local m = {
     name        = "laser_pointer",
     enabled     = true,
     convars     = {},
-    version     = "1.0.11",
+    version     = "1.1.0",
     description = "DRG-style laser pointer: a beam everyone sees. Check your console for key binding examples.",
 
     // Printed to the player's console by !am_info (chat is too narrow for binds).
     // Mirrors the Controls section of the README.
     console_info = [
         "=== laser_pointer controls ===",
-        "Toggle in chat:       say  laser   (or !laser)",
-        "Silent toggle bind:   bind v \"scripted_user_func laser\"",
-        "Hold mode (beam shines while the key is held):",
+        "The beam shines only while the key is held, and at most max_hold seconds",
+        "  (!am_set laser_pointer max_hold N; 0 = until release).",
+        "Chat laser / !laser only prints this help — it does not turn the beam on.",
+        "Hold bind:",
         "  alias +lp \"scripted_user_func laser_on\"",
         "  alias -lp \"scripted_user_func laser_off\"",
         "  bind MOUSE4 \"+lp\"",
@@ -51,17 +52,17 @@ local m = {
     // variables, their defaults and the help texts shown by !am_vars are
     // declared in ONE list via ::McRegistry.DeclareVariables below the table literal.
 
-    // activation tokens (chat + scripted_user_func)
-    _TOK_TOGGLE = "laser",
-    _TOK_ON     = "laser_on",
-    _TOK_OFF    = "laser_off",
-    _TOK_MARK   = "laser_mark",   // mark without firing; in a -release alias put it BEFORE laser_off
+    // activation tokens (chat help + scripted_user_func hold)
+    _TOK_CHAT = "laser",
+    _TOK_ON   = "laser_on",
+    _TOK_OFF  = "laser_off",
+    _TOK_MARK = "laser_mark",   // mark without firing; in a -release alias put it BEFORE laser_off
 
     _PREFIX = "[LP] ",
 
     // Chat tip on join (как !tkc_help / !am_help)
     _TIP_DELAY   = 3.5,
-    _TIP_TEXT    = "laser pointer — say laser (or !laser); binds: !am_info laser_pointer",
+    _TIP_TEXT    = "laser pointer — hold a bound key; !laser for binds",
     _pendingTips = null,
     _tipped      = null,
 
@@ -173,6 +174,7 @@ local m = {
             srcName = srcName, dstName = dstName,
             lastMark = -999.0, lastEnd = null, lastHit = null,
             lastActive = Time(),
+            holdStart = 0.0,
             lastBeamRefresh = 0.0,
             // First Update only moves the markers. The beam appears on the
             // next one, so the client never draws the end at the map origin.
@@ -242,6 +244,7 @@ local m = {
         this._destroyState(stOld);
         local st = this._newState(hPlayer, stOld.slot);
         st.active = stOld.active;
+        st.holdStart = stOld.holdStart;
         local aim = this._aimPoints(hPlayer);
         if (aim != null) this._snapEnds(st, aim);
         this._slotOwner[stOld.slot] = hPlayer;
@@ -350,22 +353,21 @@ local m = {
 
     // ---------- activation ----------
 
-    function _setActive(hPlayer, on, announce) {
+    function _setActive(hPlayer, on) {
         ::McThinkers.EnsureUpdateThinker();
         local st = this._getState(hPlayer);
         if (st == null) { this._noSlots(hPlayer); return; }
         if (st.active == on) return;
         st.active = on;
-        if (on) st.lastActive = Time();
+        if (on) {
+            st.lastActive = Time();
+            st.holdStart = Time();
+        }
         else this._beamOff(st);
-        if (announce)
-            this._broadcast(hPlayer.GetPlayerName() + ": laser " + (on ? "ON" : "OFF"));
     },
 
-    function _toggle(hPlayer, announce) {
-        local st = this._getState(hPlayer);
-        if (st == null) { this._noSlots(hPlayer); return; }
-        this._setActive(hPlayer, !st.active, announce);
+    function _printChatHelp(hPlayer) {
+        this._msg(hPlayer, "hold a bound key to show the beam; it turns off after max_hold seconds. binds: !am_info laser_pointer");
     },
 
     // ---------- hooks ----------
@@ -391,6 +393,7 @@ local m = {
     function OnVariableChanged(name, value) {
         if (name == "interval" && value < 0.02) return 0.02;
         if (name == "idle_ttl" && value < 0)    return 0;
+        if (name == "max_hold" && value < 0)    return 0;
         if (name == "beam_width") {
             local w = (value < 0.1) ? 0.1 : value;
             this._applyBeamInput("Width", w);
@@ -427,11 +430,15 @@ local m = {
 
     function OnGameEvent_player_say(params) {
         if (!("text" in params)) return;
-        local t = params["text"].tolower();
-        if (t != this._TOK_TOGGLE && t != "!" + this._TOK_TOGGLE) return;
+        local raw = params["text"];
+        if (raw == null) return;
+        if (raw.len() > 0 && raw.slice(0, 1) == "/")
+            raw = "!" + raw.slice(1);
+        local t = raw.tolower();
+        if (t != this._TOK_CHAT && t != "!" + this._TOK_CHAT) return;
         local hPlayer = GetPlayerFromUserID(params["userid"]);
         if (hPlayer == null || !hPlayer.IsValid()) return;
-        this._toggle(hPlayer, true);
+        this._printChatHelp(hPlayer);
     },
 
     // From the dispatcher: scripted_user_func <token> lands here (and so does
@@ -441,10 +448,10 @@ local m = {
         local hPlayer = params.player;
         if (hPlayer == null || !hPlayer.IsValid()) return;
         local v = params.value.tolower();
-        if      (v == this._TOK_TOGGLE) this._toggle(hPlayer, true);
-        else if (v == this._TOK_ON)     this._setActive(hPlayer, true, false);
-        else if (v == this._TOK_OFF)    this._setActive(hPlayer, false, false);
-        else if (v == this._TOK_MARK)   this._tryMark(hPlayer);
+        if      (v == this._TOK_CHAT) this._printChatHelp(hPlayer);
+        else if (v == this._TOK_ON)   this._setActive(hPlayer, true);
+        else if (v == this._TOK_OFF)  this._setActive(hPlayer, false);
+        else if (v == this._TOK_MARK) this._tryMark(hPlayer);
     },
 
     function OnGameEvent_weapon_fire(params) {
@@ -563,6 +570,14 @@ local m = {
                     this._destroyState(st);
                 continue;
             }
+
+            local maxHold = this.variables.max_hold.tofloat();
+            if (maxHold > 0 && (Time() - st.holdStart) >= maxHold) {
+                st.active = false;
+                this._beamOff(st);
+                st.lastActive = Time();
+                continue;
+            }
             st.lastActive = Time();
 
             if (!this._entsValid(st)) {
@@ -577,7 +592,7 @@ local m = {
             }
             this._snapEnds(st, aim);
 
-            // Fresh markers (restart, first toggle) sit at the map origin until
+            // Fresh markers (restart, first hold) sit at the map origin until
             // this tick. Skip the beam once so the client gets the real end
             // before anything is drawn.
             if (!st.endsReady) {
@@ -619,9 +634,10 @@ local m = {
             if (hPlayer == null || !hPlayer.IsValid())
                 continue;
             kept.append({
-                player = hPlayer,
-                slot   = st.slot,
-                active = st.active,
+                player    = hPlayer,
+                slot      = st.slot,
+                active    = st.active,
+                holdStart = st.holdStart,
             });
             this._destroyState(st);
         }
@@ -634,6 +650,7 @@ local m = {
             this._slotOwner[e.slot] = e.player;
             local st = this._newState(e.player, e.slot);
             st.active = e.active;
+            st.holdStart = e.holdStart;
             local aim = this._aimPoints(e.player);
             if (aim != null) this._snapEnds(st, aim);
             this._players[e.player] <- st;
@@ -659,6 +676,7 @@ local m = {
     ["mark_particles", 0,    "1 = extra particle burst on mark (map-dependent)",    { kind = "bool" }],
     ["mark_on_fire",   0,    "1 = firing while active also marks",                  { kind = "bool" }],
     ["idle_ttl",       60,   "free an idle player's entities after N sec (0 = keep)", { min = 0,  max = 300, step = 10 }],
+    ["max_hold",       3.0,  "max seconds the beam stays on per hold (0 = until release)", { min = 0, max = 30, step = 0.5 }],
     ["beam_refresh",   0,    "recreate env_beam every N sec while on (0 = off)",    { min = 0,    max = 60,  step = 1 }],
     ["beam_width",     1.5,  "beam width, applies to existing beams instantly",     { min = 0.5,  max = 8,   step = 0.5 }],
     ["beam_alpha",     220,  "beam opacity 0-255, applies instantly",               { min = 0,    max = 255, step = 5 }],

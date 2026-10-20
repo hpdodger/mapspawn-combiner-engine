@@ -19,6 +19,7 @@ nut/reactivedrop/
         admin/module_admin.nut   — команды !am_*
         tk_counter/              — счётчик тимкиллов + регистрация на шине
         laser_pointer/           — лазерный указатель
+        legacy_chat/             — старые чат-команды из прежнего mapspawn
 ```
 
 ## Как это работает
@@ -71,7 +72,8 @@ nut/reactivedrop/
 |---|---|
 | `admin` | `!am_*` — список, вкл/выкл, переменные, save/load (грузится первым; себя выключить нельзя) |
 | `tk_counter` | `!tkc*` — счётчик тимкиллов; сейвы в `save/vscripts/tk_counter/` |
-| `laser_pointer` | `laser` / `!laser` и `scripted_user_func`; тюнинг через `!am_vars` / `!am_set` |
+| `laser_pointer` | удержание `scripted_user_func laser_on` / `laser_off`; `!laser` — справка; гаснет через `max_hold` (по умолчанию 3 с); тюнинг через `!am_vars` / `!am_set` |
+| `legacy_chat` | старый `mapspawn` чат: `!koopa`, `!dropnuke`, `!cake`, `!hat`, …; выкл: `!am_disable legacy_chat` |
 
 Свечение на конце луча — `info_particle_system` с эффектом `blink` (список имён: https://steamcommunity.com/sharedfiles/filedetails/?id=2689066493). Клиент рисует такие сущности только при `rd_info_particle_system_enabled 1` (в игре это значение по умолчанию, пишется в `cfg/config.cfg`). Если там `0`, свечения нет. Луч от этой настройки не зависит. Настройка клиентская: у каждого игрока своя.
 
@@ -148,4 +150,6 @@ McRegistry.Register(m);
 Скопировать `nut/reactivedrop/` в дерево игры или dedicated-сервера.
 Включить `sv_mapspawn_nut_exec 1`.
 
-На сервере должен быть **один** такой `mapspawn.nut`. Если уже был другой — заменить этим или вручную перенести в него загрузку модулей.
+На сервере должен быть **один** такой `mapspawn.nut`. Если уже был другой — **не** дописывать combiner в конец старого файла: `BindDispatchers` затрёт корневой `OnGameEvent_player_say`. Вместо этого перенеси старые команды в модуль (как `legacy_chat`) или выключи/замени свой кусок и подключи готовый `modules/legacy_chat/`.
+
+Исходник до переноса лежит в корне репозитория: `mapspawn_original.nut` (только справочно).
