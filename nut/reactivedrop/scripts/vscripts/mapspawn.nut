@@ -11,6 +11,7 @@ getroottable().McMapspawnLoaded <- true;
 IncludeScript( "mapspawn_combiner/registry" );
 IncludeScript( "mapspawn_combiner/game_events" );
 IncludeScript( "mapspawn_combiner/thinker_hooks" );
+IncludeScript( "mapspawn_combiner/i18n" );
 
 ::McLog.Info( "─────────────────────────────────────────" );
 ::McLog.Info( "  Mapspawn Combiner  registry v" + ::McRegistry.version );
@@ -19,8 +20,11 @@ IncludeScript( "mapspawn_combiner/thinker_hooks" );
 
 // Порядок = порядок раздачи. admin первым — чтобы им всегда можно было управлять остальными.
 IncludeScript( "mapspawn_combiner/modules/admin/module_admin" );
+IncludeScript( "mapspawn_combiner/modules/lang/module_lang" );
 IncludeScript( "mapspawn_combiner/modules/tk_counter/module_tk_counter" );
 IncludeScript( "mapspawn_combiner/modules/laser_pointer/module_laser_pointer" );
+IncludeScript( "mapspawn_combiner/modules/weapon_kills/module_weapon_kills" );
+IncludeScript( "mapspawn_combiner/modules/assburn/module_assburn" );
 IncludeScript( "mapspawn_combiner/modules/legacy_chat/module_legacy_chat" );
 
 // Файл настроек сервера (тихие флаги enabled — без OnEnable/OnDisable).

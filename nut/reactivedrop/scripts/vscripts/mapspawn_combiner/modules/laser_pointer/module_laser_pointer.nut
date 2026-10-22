@@ -26,7 +26,7 @@ local m = {
     name        = "laser_pointer",
     enabled     = true,
     convars     = {},
-    version     = "1.1.0",
+    version     = "1.1.1",
     description = "DRG-style laser pointer: a beam everyone sees. Check your console for key binding examples.",
 
     // Printed to the player's console by !am_info (chat is too narrow for binds).
@@ -61,10 +61,7 @@ local m = {
     _PREFIX = "[LP] ",
 
     // Chat tip on join (как !tkc_help / !am_help)
-    _TIP_DELAY   = 3.5,
-    _TIP_TEXT    = "laser pointer — hold a bound key; !laser for binds",
-    _pendingTips = null,
-    _tipped      = null,
+    // Join-tip отключён: одна строка от admin — !am_help
 
     // Engine assets, always shipped with the game (see asw_ammo.cpp / asw_tesla_trap.cpp)
     _MARKER_MODEL = "models/swarm/ammo/ammoassaultrifle.mdl",
@@ -94,34 +91,6 @@ local m = {
 
     function _noSlots(hPlayer) {
         this._msg(hPlayer, "No free laser slots.");
-    },
-
-    function _sendHelpTip(hPlayer) {
-        if (hPlayer == null || !hPlayer.IsValid())
-            return;
-        local id = ::McAuth.PlayerKey(hPlayer);
-        if (id != null) {
-            if (this._tipped == null)
-                this._tipped = {};
-            if (id in this._tipped)
-                return;
-            this._tipped[id] <- true;
-        }
-        this._msg(hPlayer, this._TIP_TEXT);
-    },
-
-    function _flushHelpTips() {
-        if (this._pendingTips == null || this._pendingTips.len() == 0)
-            return;
-        local now = Time();
-        local remaining = [];
-        foreach (entry in this._pendingTips) {
-            if (now >= entry.showAt)
-                this._sendHelpTip(entry.player);
-            else
-                remaining.append(entry);
-        }
-        this._pendingTips = remaining;
     },
 
     // ---------- per-player state ----------
@@ -408,26 +377,6 @@ local m = {
         }
     },
 
-    function OnGameEvent_player_activate(params) {
-        if (!("userid" in params)) return;
-        local hPlayer = GetPlayerFromUserID(params["userid"]);
-        if (hPlayer == null || !hPlayer.IsValid()) return;
-
-        if (this._tipped == null)
-            this._tipped = {};
-        if (this._pendingTips == null)
-            this._pendingTips = [];
-
-        local id = ::McAuth.PlayerKey(hPlayer);
-        if (id != null && (id in this._tipped))
-            return;
-        foreach (entry in this._pendingTips) {
-            if (entry.player == hPlayer)
-                return;
-        }
-        this._pendingTips.append({ player = hPlayer, showAt = Time() + this._TIP_DELAY });
-    },
-
     function OnGameEvent_player_say(params) {
         if (!("text" in params)) return;
         local raw = params["text"];
@@ -551,8 +500,6 @@ local m = {
     // ---------- update loop ----------
 
     function Update() {
-        this._flushHelpTips();
-
         if (Time() < this._nextUpdate) return;
         this._nextUpdate = Time() + this.variables.interval;
 

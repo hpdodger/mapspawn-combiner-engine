@@ -15,11 +15,202 @@
 
 IncludeScript( "mapspawn_combiner/admins" );
 
+local _strings = {
+    tip = {
+        en = "!am_help — module list and commands",
+        ru = "!am_help — список модулей и команд",
+    },
+    help_title = {
+        en = "Mapspawn combiner module commands:",
+        ru = "Команды модулей mapspawn combiner:",
+    },
+    help_author = {
+        en = "  Author: typical russian (https://steamcommunity.com/id/w_asd/)",
+        ru = "  Автор: typical russian (https://steamcommunity.com/id/w_asd/)",
+    },
+    help_modules_line = {
+        en = "  Module help: !tkc_help  !laser  !wkc_help  !mc_lang",
+        ru = "  Справка модулей: !tkc_help  !laser  !wkc_help  !mc_lang",
+    },
+    help_acl = {
+        en = "  Viewing is open; enable/disable/set/save/load/reset/leader need mapspawn_combiner/admins.nut whitelist.",
+        ru = "  Просмотр открыт; enable/disable/set/save/load/reset/leader — whitelist в mapspawn_combiner/admins.nut.",
+    },
+    help_settings = {
+        en = "  Settings file: save/vscripts/{file}",
+        ru = "  Файл настроек: save/vscripts/{file}",
+    },
+    cmd_help = {
+        en = "this list (everyone)",
+        ru = "этот список (всем)",
+    },
+    cmd_modules = {
+        en = "list modules with ON/OFF (everyone)",
+        ru = "список модулей ON/OFF (всем)",
+    },
+    cmd_info = {
+        en = "show what a module does (everyone)",
+        ru = "описание модуля (всем)",
+    },
+    cmd_vars = {
+        en = "show a module's variables (everyone)",
+        ru = "переменные модуля (всем)",
+    },
+    cmd_enable = {
+        en = "enable a module (admin, until save)",
+        ru = "включить модуль (admin, до save)",
+    },
+    cmd_disable = {
+        en = "disable a module (admin, until save)",
+        ru = "выключить модуль (admin, до save)",
+    },
+    cmd_set = {
+        en = "change a variable (admin, until save)",
+        ru = "сменить переменную (admin, до save)",
+    },
+    cmd_save = {
+        en = "save on/off + variables to disk (admin)",
+        ru = "сохранить on/off + переменные на диск (admin)",
+    },
+    cmd_load = {
+        en = "re-apply the saved settings (admin)",
+        ru = "применить сохранённые настройки (admin)",
+    },
+    cmd_reset = {
+        en = "restore defaults and clear the file (admin)",
+        ru = "сбросить к defaults и очистить файл (admin)",
+    },
+    cmd_leader = {
+        en = "show current leader; set by SteamID (admin)",
+        ru = "текущий лидер; назначить по SteamID (admin)",
+    },
+    no_perm = {
+        en = "No permission. Type {help} for the command list.",
+        ru = "Нет прав. Список команд: {help}.",
+    },
+    not_found = {
+        en = "Module not found: {name}",
+        ru = "Модуль не найден: {name}",
+    },
+    modules_hdr = {
+        en = "Modules:",
+        ru = "Модули:",
+    },
+    usage_info = {
+        en = "Usage: {cmd} <module>",
+        ru = "Использование: {cmd} <module>",
+    },
+    no_desc = {
+        en = "no description",
+        ru = "нет описания",
+    },
+    list_tunables = {
+        en = "  {cmd} {name} - list tunables",
+        ru = "  {cmd} {name} - список настроек",
+    },
+    cannot_disable_admin = {
+        en = "Cannot disable admin (would lock the commands).",
+        ru = "Нельзя выключить admin (потеряете команды).",
+    },
+    already = {
+        en = "{name} is already {state}.",
+        ru = "{name} уже {state}.",
+    },
+    enabled = {
+        en = "{name} enabled.",
+        ru = "{name} включён.",
+    },
+    disabled = {
+        en = "{name} disabled.",
+        ru = "{name} выключен.",
+    },
+    runtime_until = {
+        en = "Runtime only until {cmd}.",
+        ru = "Только до перезапуска/карты, пока не сделаете {cmd}.",
+    },
+    no_vars = {
+        en = "{name} has no variables.",
+        ru = "У {name} нет переменных.",
+    },
+    vars_hdr = {
+        en = "{name} variables:",
+        ru = "Переменные {name}:",
+    },
+    usage_set = {
+        en = "Usage: {cmd} <module> <var> <value>",
+        ru = "Использование: {cmd} <module> <var> <value>",
+    },
+    unknown_var = {
+        en = "Unknown variable: {name}",
+        ru = "Неизвестная переменная: {name}",
+    },
+    rejected = {
+        en = "Value rejected by {name}.",
+        ru = "Значение отклонено модулем {name}.",
+    },
+    set_ok = {
+        en = "{mod}.{var} = {value}",
+        ru = "{mod}.{var} = {value}",
+    },
+    saved = {
+        en = "Settings saved to save/vscripts/{file}",
+        ru = "Настройки сохранены в save/vscripts/{file}",
+    },
+    no_file = {
+        en = "No settings file ({file}).",
+        ru = "Нет файла настроек ({file}).",
+    },
+    loaded = {
+        en = "Loaded {n} setting(s) from save/vscripts/{file}",
+        ru = "Загружено настроек: {n} из save/vscripts/{file}",
+    },
+    reset_ok = {
+        en = "Settings reset to defaults; save/vscripts/{file} cleared.",
+        ru = "Настройки сброшены; save/vscripts/{file} очищен.",
+    },
+    bad_steamid = {
+        en = "Bad SteamID. Use STEAM_1:Y:Z (as in status).",
+        ru = "Плохой SteamID. Формат STEAM_1:Y:Z (как в status).",
+    },
+    no_player = {
+        en = "No such player.",
+        ru = "Игрок не найден.",
+    },
+    no_gres = {
+        en = "asw_game_resource not found.",
+        ru = "asw_game_resource не найден.",
+    },
+    leader_set = {
+        en = "Leader set to {name}  {steam}",
+        ru = "Лидер: {name}  {steam}",
+    },
+    admin_mark = {
+        en = " (admin)",
+        ru = " (admin)",
+    },
+    leader_none = {
+        en = "Current leader: none",
+        ru = "Текущий лидер: нет",
+    },
+    leader_cur = {
+        en = "Current leader: {name}  {steam}",
+        ru = "Текущий лидер: {name}  {steam}",
+    },
+    leader_usage = {
+        en = "Usage: {cmd} <steamid>",
+        ru = "Использование: {cmd} <steamid>",
+    },
+    leader_hint = {
+        en = "SteamID as in status / admins.nut: STEAM_1:Y:Z",
+        ru = "SteamID как в status / admins.nut: STEAM_1:Y:Z",
+    },
+};
+
 local m = {
     name        = "admin",
     enabled     = true,
     convars     = {},
-    version     = "1.1.1",
+    version     = "1.2.0",
     description = "Runtime mapspawn combiner module management: the !am_ chat commands.",
     requires_registry = 4,
 
@@ -28,6 +219,7 @@ local m = {
     _SETTINGS_DIR = "mapspawn_combiner/",
     _SETTINGS_FILE = "mapspawn_combiner/settings.txt",
     _KEY_ENABLED  = "__enabled",
+    _strings      = _strings,
 
     _CMD_HELP     = "!am_help",
     _CMD_MODULES  = "!am_modules",
@@ -45,28 +237,42 @@ local m = {
     _defaults        = null,   // moduleName -> { var = defaultValue }
     _defaultsEnabled = null,   // moduleName -> default enabled flag
 
-    // Chat tip on join (как !tkc_help у tk_counter)
+    // Одна общая подсказка на вход (остальные модули свои tip не шлют).
     _TIP_DELAY   = 3.0,
-    _TIP_TEXT    = "mapspawn combiner admin — !am_help",
     _pendingTips = null,   // [ { player, showAt }, … ]
     _tipped      = null,   // steam account id -> true
 
-    // ---------- messaging ----------
+    // ---------- messaging / i18n ----------
+
+    function _langOf( hPlayer ) {
+        if ( "McI18n" in getroottable() )
+            return ::McI18n.LangOf( hPlayer );
+        return "en";
+    },
+
+    function _t( hPlayer, msgId, vars = null ) {
+        local lang = this._langOf( hPlayer );
+        if ( !( "McI18n" in getroottable() ) )
+            return msgId;
+        if ( vars == null )
+            return ::McI18n.T( this._strings, msgId, lang );
+        return ::McI18n.TF( this._strings, msgId, lang, vars );
+    },
 
     function _msg( hPlayer, text ) {
         ClientPrint( hPlayer, HudPrint.Talk, this._PREFIX + text );
+    },
+
+    function _msgId( hPlayer, msgId, vars = null ) {
+        this._msg( hPlayer, this._t( hPlayer, msgId, vars ) );
     },
 
     function _msgRaw( hPlayer, text ) {
         ClientPrint( hPlayer, HudPrint.Talk, text );
     },
 
-    function _broadcast( text ) {
-        Say( null, this._PREFIX + text );
-    },
-
     function _moduleNotFound( hPlayer, name ) {
-        this._msg( hPlayer, "Module not found: " + name );
+        this._msgId( hPlayer, "not_found", { name = name } );
     },
 
     // ---------- lookups ----------
@@ -114,7 +320,8 @@ local m = {
                 return;
             this._tipped[id] <- true;
         }
-        this._msg( hPlayer, this._TIP_TEXT );
+        // [MC], не [AM] — единая точка входа в справку combiner
+        this._msgRaw( hPlayer, "[MC] " + this._t( hPlayer, "tip" ) );
     },
 
     function Update() {
@@ -161,7 +368,7 @@ local m = {
                 continue;
 
             if ( c.admin && !this._isAdmin( hPlayer ) ) {
-                this._msg( hPlayer, "No permission. Type " + this._CMD_HELP + " for the command list." );
+                this._msgId( hPlayer, "no_perm", { help = this._CMD_HELP } );
                 return;
             }
             this[c.fn]( hPlayer, withArg ? raw.slice( n + 1 ) : "" );
@@ -173,12 +380,15 @@ local m = {
     // ---------- commands (uniform signature: hPlayer, szArgs) ----------
 
     function _printHelp( hPlayer, szArgs ) {
-        this._msg( hPlayer, "Mapspawn combiner module commands:" );
-        this._msgRaw( hPlayer, "  Author: typical russian (https://steamcommunity.com/id/w_asd/)" );
-        foreach ( c in this._CMDS )
-            this._msgRaw( hPlayer, "  " + c.cmd + c.args + " - " + c.help );
-        this._msgRaw( hPlayer, "  Viewing is open; enable/disable/set/save/load/reset/leader need mapspawn_combiner/admins.nut whitelist." );
-        this._msgRaw( hPlayer, "  Settings file: save/vscripts/" + this._SETTINGS_FILE );
+        this._msgId( hPlayer, "help_title" );
+        this._msgRaw( hPlayer, this._t( hPlayer, "help_author" ) );
+        foreach ( c in this._CMDS ) {
+            local help = this._t( hPlayer, c.help_id );
+            this._msgRaw( hPlayer, "  " + c.cmd + c.args + " - " + help );
+        }
+        this._msgRaw( hPlayer, this._t( hPlayer, "help_modules_line" ) );
+        this._msgRaw( hPlayer, this._t( hPlayer, "help_acl" ) );
+        this._msgRaw( hPlayer, this._t( hPlayer, "help_settings", { file = this._SETTINGS_FILE } ) );
     },
 
     function _modVersion( mod ) {
@@ -188,11 +398,11 @@ local m = {
     },
 
     function _printList( hPlayer, szArgs ) {
-        this._msg( hPlayer, "Modules:" );
+        this._msgId( hPlayer, "modules_hdr" );
         foreach ( mod in ::McRegistry.modules ) {
             local status = mod.enabled ? "[ON]" : "[OFF]";
             local ver = " v" + this._modVersion( mod );
-            local selfMark = ( mod.name == this.name ) ? " (admin)" : "";
+            local selfMark = ( mod.name == this.name ) ? this._t( hPlayer, "admin_mark" ) : "";
             local hint = ( "variables" in mod ) ? "  (" + this._CMD_VARS + " " + mod.name + ")" : "";
             this._msgRaw( hPlayer, "  " + status + " " + mod.name + ver + selfMark + hint );
         }
@@ -200,7 +410,7 @@ local m = {
 
     function _info( hPlayer, szArgs ) {
         if ( szArgs == "" ) {
-            this._msg( hPlayer, "Usage: " + this._CMD_INFO + " <module>" );
+            this._msgId( hPlayer, "usage_info", { cmd = this._CMD_INFO } );
             return;
         }
         local mod = this._findModule( szArgs );
@@ -209,10 +419,13 @@ local m = {
             return;
         }
         local status = mod.enabled ? "[ON]" : "[OFF]";
-        local desc = ( "description" in mod ) ? mod.description : "no description";
+        local desc = ( "description" in mod ) ? mod.description : this._t( hPlayer, "no_desc" );
         this._msg( hPlayer, status + " " + mod.name + " v" + this._modVersion( mod ) + " - " + desc );
         if ( "variables" in mod )
-            this._msgRaw( hPlayer, "  " + this._CMD_VARS + " " + mod.name + " - list tunables" );
+            this._msgRaw( hPlayer, this._t( hPlayer, "list_tunables", {
+                cmd = this._CMD_VARS,
+                name = mod.name,
+            } ) );
         if ( "console_info" in mod ) {
             foreach ( line in mod.console_info )
                 ClientPrint( hPlayer, HudPrint.Console, line );
@@ -224,7 +437,9 @@ local m = {
 
     function _toggleModule( hPlayer, name, enable ) {
         if ( name == "" ) {
-            this._msg( hPlayer, "Usage: " + ( enable ? this._CMD_ENABLE : this._CMD_DISABLE ) + " <module>" );
+            this._msgId( hPlayer, "usage_info", {
+                cmd = enable ? this._CMD_ENABLE : this._CMD_DISABLE,
+            } );
             return;
         }
         local mod = this._findModule( name );
@@ -233,21 +448,25 @@ local m = {
             return;
         }
         if ( mod.name == this.name ) {
-            this._msg( hPlayer, "Cannot disable admin (would lock the commands)." );
+            this._msgId( hPlayer, "cannot_disable_admin" );
             return;
         }
         if ( mod.enabled == enable ) {
-            this._msg( hPlayer, mod.name + " is already " + ( enable ? "ON" : "OFF" ) + "." );
+            this._msgId( hPlayer, "already", {
+                name = mod.name,
+                state = enable ? "ON" : "OFF",
+            } );
             return;
         }
         ::McRegistry.SetEnabled( mod, enable );
-        this._broadcast( mod.name + ( enable ? " enabled." : " disabled." ) );
-        this._msg( hPlayer, "Runtime only until " + this._CMD_SAVE + "." );
+        // Ответ только автору команды — не засорять общий чат.
+        this._msgId( hPlayer, enable ? "enabled" : "disabled", { name = mod.name } );
+        this._msgId( hPlayer, "runtime_until", { cmd = this._CMD_SAVE } );
     },
 
     function _printVars( hPlayer, szArgs ) {
         if ( szArgs == "" ) {
-            this._msg( hPlayer, "Usage: " + this._CMD_VARS + " <module>" );
+            this._msgId( hPlayer, "usage_info", { cmd = this._CMD_VARS } );
             return;
         }
         local mod = this._findModule( szArgs );
@@ -256,10 +475,10 @@ local m = {
             return;
         }
         if ( !( "variables" in mod ) ) {
-            this._msg( hPlayer, mod.name + " has no variables." );
+            this._msgId( hPlayer, "no_vars", { name = mod.name } );
             return;
         }
-        this._msg( hPlayer, mod.name + " variables:" );
+        this._msgId( hPlayer, "vars_hdr", { name = mod.name } );
         local keys = [];
         if ( "variables_order" in mod )
             keys = mod.variables_order;
@@ -298,7 +517,7 @@ local m = {
         if ( start < n )
             parts.append( s.slice( start ) );
         if ( parts.len() < 3 ) {
-            this._msg( hPlayer, "Usage: " + this._CMD_SET + " <module> <var> <value>" );
+            this._msgId( hPlayer, "usage_set", { cmd = this._CMD_SET } );
             return;
         }
         local mod = this._findModule( parts[0] );
@@ -308,15 +527,19 @@ local m = {
         }
         local r = ::McRegistry.ApplyVariable( mod, parts[1], parts[2] );
         if ( r == "notfound" ) {
-            this._msg( hPlayer, "Unknown variable: " + parts[1] );
+            this._msgId( hPlayer, "unknown_var", { name = parts[1] } );
             return;
         }
         if ( r == "rejected" ) {
-            this._msg( hPlayer, "Value rejected by " + mod.name + "." );
+            this._msgId( hPlayer, "rejected", { name = mod.name } );
             return;
         }
-        this._msg( hPlayer, mod.name + "." + parts[1] + " = " + mod.variables[parts[1]] );
-        this._msg( hPlayer, "Runtime only until " + this._CMD_SAVE + "." );
+        this._msgId( hPlayer, "set_ok", {
+            mod = mod.name,
+            var = parts[1],
+            value = mod.variables[parts[1]],
+        } );
+        this._msgId( hPlayer, "runtime_until", { cmd = this._CMD_SAVE } );
     },
 
     function _parseAccountId( raw ) {
@@ -383,39 +606,45 @@ local m = {
     function _printCurrentLeader( hPlayer ) {
         local hLeader = this._leaderPlayer();
         if ( hLeader == null ) {
-            this._msg( hPlayer, "Current leader: none" );
+            this._msgId( hPlayer, "leader_none" );
             return;
         }
-        this._msg( hPlayer, "Current leader: " + hLeader.GetPlayerName() + "  " + this._playerSteamId( hLeader ) );
+        this._msgId( hPlayer, "leader_cur", {
+            name = hLeader.GetPlayerName(),
+            steam = this._playerSteamId( hLeader ),
+        } );
     },
 
     function _setLeader( hPlayer, szArgs ) {
         local s = ::McAuth.TrimSpaces( szArgs );
         if ( s == "" ) {
             this._printCurrentLeader( hPlayer );
-            this._msg( hPlayer, "Usage: " + this._CMD_LEADER + " <steamid>" );
-            this._msg( hPlayer, "SteamID as in status / admins.nut: STEAM_1:Y:Z" );
+            this._msgId( hPlayer, "leader_usage", { cmd = this._CMD_LEADER } );
+            this._msgId( hPlayer, "leader_hint" );
             return;
         }
         local acc = this._parseAccountId( s );
         if ( acc == null ) {
             this._printCurrentLeader( hPlayer );
-            this._msg( hPlayer, "Bad SteamID. Use STEAM_1:Y:Z (as in status)." );
+            this._msgId( hPlayer, "bad_steamid" );
             return;
         }
         local hTarget = this._findPlayerByAccountId( acc );
         if ( hTarget == null ) {
             this._printCurrentLeader( hPlayer );
-            this._msg( hPlayer, "No such player." );
+            this._msgId( hPlayer, "no_player" );
             return;
         }
         local hRes = this._gameResource();
         if ( !hRes ) {
-            this._msg( hPlayer, "asw_game_resource not found." );
+            this._msgId( hPlayer, "no_gres" );
             return;
         }
         NetProps.SetPropEntity( hRes, "m_Leader", hTarget );
-        this._broadcast( "Leader set to " + hTarget.GetPlayerName() + "  " + this._playerSteamId( hTarget ) );
+        this._msgId( hPlayer, "leader_set", {
+            name = hTarget.GetPlayerName(),
+            steam = this._playerSteamId( hTarget ),
+        } );
     },
 
     // ---------- persistence ----------
@@ -520,17 +749,17 @@ local m = {
     function _save( hPlayer, szArgs ) {
         this._ensureDefaults();
         StringToFile( this._SETTINGS_FILE, this._serialize() );
-        this._broadcast( "Settings saved to save/vscripts/" + this._SETTINGS_FILE );
+        this._msgId( hPlayer, "saved", { file = this._SETTINGS_FILE } );
     },
 
     function _load( hPlayer, szArgs ) {
         this._ensureDefaults();
         local n = this._loadApply( false );
         if ( n < 0 ) {
-            this._msg( hPlayer, "No settings file (" + this._SETTINGS_FILE + ")." );
+            this._msgId( hPlayer, "no_file", { file = this._SETTINGS_FILE } );
             return;
         }
-        this._broadcast( "Loaded " + n + " setting(s) from save/vscripts/" + this._SETTINGS_FILE );
+        this._msgId( hPlayer, "loaded", { n = n, file = this._SETTINGS_FILE } );
     },
 
     function _reset( hPlayer, szArgs ) {
@@ -556,22 +785,22 @@ local m = {
             }
         }
         StringToFile( this._SETTINGS_FILE, "" );
-        this._broadcast( "Settings reset to defaults; save/vscripts/" + this._SETTINGS_FILE + " cleared." );
+        this._msgId( hPlayer, "reset_ok", { file = this._SETTINGS_FILE } );
     },
 };
 
 m._CMDS = [
-    { cmd = m._CMD_HELP,    args = "",                        help = "this list (everyone)",                  admin = false, fn = "_printHelp" },
-    { cmd = m._CMD_MODULES, args = "",                        help = "list modules with ON/OFF (everyone)",   admin = false, fn = "_printList" },
-    { cmd = m._CMD_INFO,    args = " <module>",               help = "show what a module does (everyone)",    admin = false, fn = "_info"      },
-    { cmd = m._CMD_VARS,    args = " <module>",               help = "show a module's variables (everyone)",  admin = false, fn = "_printVars" },
-    { cmd = m._CMD_ENABLE,  args = " <module>",               help = "enable a module (admin, until save)",   admin = true,  fn = "_enable"    },
-    { cmd = m._CMD_DISABLE, args = " <module>",               help = "disable a module (admin, until save)",  admin = true,  fn = "_disable"   },
-    { cmd = m._CMD_SET,     args = " <module> <var> <value>", help = "change a variable (admin, until save)", admin = true,  fn = "_setVar"    },
-    { cmd = m._CMD_SAVE,    args = "",                        help = "save on/off + variables to disk (admin)", admin = true, fn = "_save"     },
-    { cmd = m._CMD_LOAD,    args = "",                        help = "re-apply the saved settings (admin)",   admin = true,  fn = "_load"      },
-    { cmd = m._CMD_RESET,   args = "",                        help = "restore defaults and clear the file (admin)", admin = true, fn = "_reset" },
-    { cmd = m._CMD_LEADER,  args = " [steamid]",              help = "show current leader; set by SteamID (admin)", admin = true, fn = "_setLeader" },
+    { cmd = m._CMD_HELP,    args = "",                        help_id = "cmd_help",    admin = false, fn = "_printHelp" },
+    { cmd = m._CMD_MODULES, args = "",                        help_id = "cmd_modules", admin = false, fn = "_printList" },
+    { cmd = m._CMD_INFO,    args = " <module>",               help_id = "cmd_info",    admin = false, fn = "_info"      },
+    { cmd = m._CMD_VARS,    args = " <module>",               help_id = "cmd_vars",    admin = false, fn = "_printVars" },
+    { cmd = m._CMD_ENABLE,  args = " <module>",               help_id = "cmd_enable",  admin = true,  fn = "_enable"    },
+    { cmd = m._CMD_DISABLE, args = " <module>",               help_id = "cmd_disable", admin = true,  fn = "_disable"   },
+    { cmd = m._CMD_SET,     args = " <module> <var> <value>", help_id = "cmd_set",     admin = true,  fn = "_setVar"    },
+    { cmd = m._CMD_SAVE,    args = "",                        help_id = "cmd_save",    admin = true,  fn = "_save"      },
+    { cmd = m._CMD_LOAD,    args = "",                        help_id = "cmd_load",    admin = true,  fn = "_load"      },
+    { cmd = m._CMD_RESET,   args = "",                        help_id = "cmd_reset",   admin = true,  fn = "_reset"     },
+    { cmd = m._CMD_LEADER,  args = " [steamid]",              help_id = "cmd_leader",  admin = true,  fn = "_setLeader" },
 ];
 
 ::McRegistry.Register( m );

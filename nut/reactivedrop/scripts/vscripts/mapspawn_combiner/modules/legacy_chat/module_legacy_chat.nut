@@ -47,7 +47,7 @@ if ( "LegacyChatLoaded" in getroottable() ) {
                             return;
                         }
                     }
-                    ClientPrint( null, 3, "no such player" );
+                    ClientPrint( hCaller, 3, "no such player" );
                     return;
                 }
             }

@@ -29,7 +29,8 @@ const TK_EM_DASH      = " — "
 const TK_LANG_RU = "ru"
 const TK_LANG_EN = "en"
 // ASRD Squirrel: const may only be a literal, not another const
-const TK_DEFAULT_LANG = "ru"
+// Дефолт языка системы — en (::McI18n). Локальный fallback, если i18n ещё не загружен.
+const TK_DEFAULT_LANG = "en"
 
 const TK_CMD_HELP  = "!tkc_help"
 const TK_CMD_ME    = "!tkc"
@@ -173,8 +174,8 @@ const TK_MSG_SCORE_LINE      = "score_line"
         en = "{min} — {title}",
     },
     help_lang = {
-        ru = "!tkc_lang ru|en — язык рангов",
-        en = "!tkc_lang ru|en — rank language",
+        ru = "!tkc_lang / !mc_lang en|ru — язык (общий для combiner)",
+        en = "!tkc_lang / !mc_lang en|ru — language (shared across combiner)",
     },
     help_on = {
         ru = "!tkc_on — показать объявления тимкиллов",
@@ -770,6 +771,9 @@ TkFlushOneAnnounce <- function() {
 }
 
 TkLangOf <- function( hPlayer ) {
+    // Общий язык combiner (McI18n); TK-файл остаётся запасным зеркалом.
+    if ( "McI18n" in getroottable() )
+        return ::McI18n.LangOf( hPlayer )
     local id = TkKey( hPlayer )
     if ( id == null )
         return TK_DEFAULT_LANG
@@ -777,6 +781,22 @@ TkLangOf <- function( hPlayer ) {
 }
 
 TkSetLang <- function( hPlayer, lang ) {
+    if ( "McI18n" in getroottable() ) {
+        local set = ::McI18n.SetLang( hPlayer, lang )
+        if ( set == null )
+            return null
+        // Зеркало в TK-сейв для старых тулов / бэкапов
+        local id = TkKey( hPlayer )
+        if ( id != null ) {
+            local rec = TkLoad( id )
+            rec.lang = set
+            rec.name = hPlayer.GetPlayerName()
+            rec.steam = hPlayer.GetNetworkIDString()
+            ::g_TkCache[id] <- rec
+            TkSave( id )
+        }
+        return set
+    }
     local id = TkKey( hPlayer )
     if ( id == null )
         return null
@@ -1053,15 +1073,7 @@ _OnPlayerActivate <- function( hPlayer ) {
     if ( hPlayer == null || !hPlayer.IsValid() )
         return
     TkTouchPlayer( hPlayer )
-    local id = TkKey( hPlayer )
-    if ( id != null && ( id in TippedPlayers ) )
-        return
-    // Avoid duplicate queue entries if activate fires twice before tip shows
-    foreach ( entry in PendingTips ) {
-        if ( entry.hPlayer == hPlayer )
-            return
-    }
-    PendingTips.append( { hPlayer = hPlayer, showAt = Time() + TK_TIP_DELAY } )
+    // Join-tip отключён: одна строка от admin — !am_help
 }
 
 _OnPlayerSay <- function( params ) {
