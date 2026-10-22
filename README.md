@@ -3,6 +3,11 @@
 Серверные VScript-модули, которые работают на каждой карте через `mapspawn.nut`
 (нужен `sv_mapspawn_nut_exec 1`). Не зависят от выбранного челленджа.
 
+На сервер приходится один `mapspawn.nut`. Если каждый аддон ставит свои
+корневые `OnGameEvent_*`, они затирают друг друга. Combiner даёт один вход,
+реестр модулей и общую раздачу событий: модуль подписывается на нужные слоты
+и корень не трогает.
+
 ## Состав
 
 ```
@@ -14,28 +19,34 @@ nut/reactivedrop/
       registry.nut               — ::McRegistry
       game_events.nut            — ::McGameEvents (OnGameEvent_*)
       thinker_hooks.nut          — ::McThinkers (OnGameplayStart, Update, урон…)
-      admins.nut                 — ::McAuth (SteamID для !am_* / !tkc_reset)
+      admins.nut                 — ::McAuth (SteamID)
       modules/
-        admin/module_admin.nut   — команды !am_*
-        tk_counter/              — счётчик тимкиллов + регистрация на шине
-        laser_pointer/           — лазерный указатель
-        legacy_chat/             — старые чат-команды из прежнего mapspawn
+        <имя>/module_<имя>.nut   — вход модуля
 ```
+
+Ядро — файлы в `mapspawn_combiner/`. Каждый модуль живёт целиком в своей папке
+`modules/<имя>/`. Вход — `module_<имя>.nut`: таблица, хуки, `McRegistry.Register`.
+
+Администрирование во время игры — модуль `admin`. Он оформлен как остальные
+(своя папка, таблица, регистрация в реестре), грузится первым и себя выключить
+нельзя. Команды и права — в [README модуля](nut/reactivedrop/scripts/vscripts/mapspawn_combiner/modules/admin/README.md).
 
 ## Как это работает
 
 1. При старте карты движок выполняет `mapspawn.nut`.
-2. Подключаются реестр, списки хуков и модули.
+2. Подключаются реестр, списки хуков и модули (порядок `IncludeScript` = порядок раздачи).
 3. Каждый модуль вызывает `McRegistry.Register(m)`.
-4. `McRegistry.ApplyConvars()` выставляет convars из модулей.
-5. Из файла настроек (если есть) тихо подтягиваются вкл/выкл и переменные.
+4. Модуль `admin` тихо подтягивает вкл/выкл и переменные из файла настроек (если есть).
+5. `McRegistry.ApplyConvars()` выставляет convars из модулей.
 6. `McGameEvents.BindDispatchers()` и `McThinkers.BindHooks()` вешают хуки движка.
-7. На каждое игровое событие и служебный хук вызывается раздача по модулям.
+7. На каждое игровое событие и служебный хук идёт раздача по включённым модулям.
 8. Выключенный модуль события не получает.
 9. `McRegistry.SetEnabled` меняет флаг и при необходимости зовёт `OnEnable` / `OnDisable`.
 
 Модуль подписывается только на нужные слоты, например
 `function OnGameEvent_entity_killed(params) { … }`.
+
+Ошибка в одном модуле не останавливает остальные: раздача ловит исключение и пишет в лог.
 
 Пространства имён:
 
@@ -44,9 +55,39 @@ nut/reactivedrop/
 | `McRegistry` | регистрация, раздача, convars, переменные |
 | `McGameEvents` | список имён + `BindDispatchers()` |
 | `McThinkers` | Update-thinker + служебные хуки |
-| `McAuth` | whitelist SteamID (`IsAdmin`, `PlayerKey`…) |
+| `McAuth` | список SteamID (`IsAdmin`, `PlayerKey`…) |
+| `McLog` | цветной лог загрузки: Info / Warn / Err |
 
 Тег в логе: `[MC]`. Глобальный `enum HudPrint` остаётся общим.
+
+Имена модулей в реестре — `snake_case`. В командах то же имя, что поле `name`.
+`FindModule` ищет точное совпадение.
+
+Префиксы чат-команд живут в модулях. Каждый модуль сам разбирает `player_say`;
+одна и та же строка сработала бы у всех подписанных.
+
+### Подсистемы ядра
+
+**Реестр (`registry.nut`).** `Register` пропускает повторное имя модуля.
+Конфликт значений convar записывается и печатается при `ApplyConvars`
+(остаётся значение того, кто зарегистрировался раньше). Возврат обработчика
+игнорируется, кроме числового возврата `DispatchDamage`. Поле `requires_registry` —
+минимальная версия `McRegistry.version`, с которой модуль рассчитан работать.
+Если версия реестра на сервере меньше — в лог будет предупреждение, модуль всё равно регистрируется.
+
+**Игровые события (`game_events.nut`).** Список имён — по `g_ScriptGameEventList`
+в исходниках игры. Хендлеры **явные** (имя события зашито в теле функции):
+движок зовёт `OnGameEvent_*` с `this = null`, поэтому `bindenv` и замыкания
+на локали не работают. `BindDispatchers()` только копирует готовые функции
+из `handlers` в корень. События без логики в модулях сразу возвращаются. Если в новой
+версии игры появятся имена — добавить строку в `names` и такой же явный хендлер.
+
+**Служебные хуки (`thinker_hooks.nut`).** `OnGameplayStart` заново создаёт
+сущность `mc_thinker`: `asw_restart_mission` удаляет `info_target` и не
+перезагружает `mapspawn.nut`, иначе `Update` у модулей молчит до смены карты.
+
+**Авторизация (`admins.nut`).** Общий список SteamID для команд, которым
+нужны права. Формат как в `status`: `STEAM_1:Y:Z`.
 
 ### Служебные хуки (не game event)
 
@@ -62,61 +103,15 @@ nut/reactivedrop/
 | (сущность `mc_thinker`) | `Update` | ~20 раз в секунду |
 | после `mission_success` / `mission_failed` | `Cleanup` | после раздачи самого game event |
 
-Эти имена движок также может вызывать у скрипта активного челленджа. Здесь они объявлены в корне `mapspawn`, чтобы модули combiner работали всегда. Со скриптом челленджа это разные области видимости: один модуль дважды не вызывается.
+Эти имена движок также может вызывать у скрипта активного челленджа. Здесь они
+объявлены в корне `mapspawn`, чтобы модули combiner работали всегда. Со скриптом
+челленджа это разные области видимости: один модуль дважды не вызывается.
 
-Список игровых событий — в `mapspawn_combiner/game_events.nut` (по `g_ScriptGameEventList` в исходниках игры). Хендлеры там **явные** (имя события зашито в теле функции): движок зовёт `OnGameEvent_*` с `this = null`, поэтому `bindenv` и замыкания на локали не работают. Если в новой версии игры появятся новые имена — добавить строку в `names` и такой же явный хендлер в `handlers`.
-
-## Модули
-
-| Модуль | Команды |
-|---|---|
-| `admin` | `!am_*` — список, вкл/выкл, переменные, save/load (грузится первым; себя выключить нельзя) |
-| `tk_counter` | `!tkc*` — счётчик тимкиллов; сейвы в `save/vscripts/tk_counter/` |
-| `laser_pointer` | удержание `scripted_user_func laser_on` / `laser_off`; `!laser` — справка; гаснет через `max_hold` (по умолчанию 3 с); тюнинг через `!am_vars` / `!am_set` |
-| `legacy_chat` | старый `mapspawn` чат: `!koopa`, `!dropnuke`, `!cake`, `!hat`, …; выкл: `!am_disable legacy_chat` |
-
-Свечение на конце луча — `info_particle_system` с эффектом `blink` (список имён: https://steamcommunity.com/sharedfiles/filedetails/?id=2689066493). Клиент рисует такие сущности только при `rd_info_particle_system_enabled 1` (в игре это значение по умолчанию, пишется в `cfg/config.cfg`). Если там `0`, свечения нет. Луч от этой настройки не зависит. Настройка клиентская: у каждого игрока своя.
-
-### Команды `!am_`
-
-| Команда | Кто | Что делает |
-|---|---|---|
-| `!am_help` | все | справка |
-| `!am_modules` | все | список `[ON]`/`[OFF]` и версии |
-| `!am_info <module>` | все | описание |
-| `!am_vars <module>` | все | переменные модуля |
-| `!am_enable <module>` | whitelist | включить (в RAM, пока не save) |
-| `!am_disable <module>` | whitelist | выключить (в RAM, пока не save) |
-| `!am_set <module> <var> <value>` | whitelist | переменная (в RAM, пока не save) |
-| `!am_save` | whitelist | записать `save/vscripts/mapspawn_combiner/settings.txt` |
-| `!am_load` | whitelist | применить файл (с `OnEnable`/`OnDisable`) |
-| `!am_reset` | whitelist | значения из кода + очистить файл |
-| `!am_leader [steamid]` | whitelist | без аргумента — ник и SteamID текущего лидера; с `STEAM_1:Y:Z` — назначить |
-
-Имя модуля в командах — точное (`laser_pointer`, не `LaserPointer`), как в `!am_modules`.
-
-Whitelist: `mapspawn_combiner/admins.nut` (`STEAM_1:Y:Z`), общий с `!tkc_reset`.
-
-Префикс `!am_` не пересекается с командами счётчика `!tkc`. Алиас `/am_…` тоже принимается.
-
-### Файл настроек
-
-`save/vscripts/mapspawn_combiner/settings.txt` — один на весь сервер:
-
-```text
-tk_counter.__enabled=0
-laser_pointer.beam_width=1.5
-```
-
-- `admin` из файла не выключается.
-- После регистрации модулей настройки подтягиваются без вызова `OnEnable`/`OnDisable`.
-- `!am_enable` / `!am_set` живут в памяти, пока не сделан `!am_save`.
-
-### Как выглядит модуль
+## Как выглядит модуль
 
 ```squirrel
 local m = {
-    name        = "Example",
+    name        = "example",
     enabled     = true,
     convars     = {},
     version     = "1.0.0",
@@ -136,9 +131,8 @@ McRegistry.DeclareVariables(m, [
 McRegistry.Register(m);
 ```
 
-Поле `requires_registry` — минимальная версия `McRegistry.version`, с которой модуль рассчитан работать. Если на сервере реестр старше, в лог будет предупреждение.
-
-Логика счётчика тимкиллов лежит в `modules/tk_counter/`. Правки счётчика — там; `module_tk_counter.nut` только регистрирует его на шине.
+Логика модуля лежит в его папке. Правки — там; `module_*.nut` регистрирует
+модуль в реестре (и при необходимости держит весь код, если файл один).
 
 ## Добавить модуль
 
@@ -146,11 +140,34 @@ McRegistry.Register(m);
 2. Файл `module_<имя>.nut`: таблица модуля, нужные хуки, `McRegistry.Register`.
 3. Одна строка `IncludeScript( "mapspawn_combiner/modules/<имя>/module_<имя>" )` в `mapspawn.nut`.
 
+## Файл настроек
+
+`save/vscripts/mapspawn_combiner/settings.txt` — один на весь сервер:
+
+```text
+example.__enabled=0
+example.cooldown=3.0
+```
+
+- Строки `Module.__enabled=0|1` и `Module.var=value`.
+- Модуль `admin` из файла не выключается и в файл как выключенный не пишется.
+- После регистрации модулей `mapspawn.nut` зовёт `ApplySavedSettings(true)`:
+  флаги вкл/выкл ставятся без `OnEnable` / `OnDisable`.
+- Смена флага или переменной во время игры живёт в памяти, пока её не запишут
+  на диск. Запись, чтение и сброс файла — команды модуля `admin`.
+
+Описание конкретного модуля — README в его папке `modules/<имя>/`. Состав
+модулей на сервере свой: в `mapspawn.nut` подключено то, что нужно этому дереву.
+
 ## Установка
 
 Скопировать `nut/reactivedrop/` в дерево игры или dedicated-сервера.
-Включить `sv_mapspawn_nut_exec 1`.
+Включить `sv_mapspawn_nut_exec 1` (в дереве уже есть `cfg/autoexec.cfg`).
 
-На сервере должен быть **один** такой `mapspawn.nut`. Если уже был другой — **не** дописывать combiner в конец старого файла: `BindDispatchers` затрёт корневой `OnGameEvent_player_say`. Вместо этого перенеси старые команды в модуль (как `legacy_chat`) или выключи/замени свой кусок и подключи готовый `modules/legacy_chat/`.
+На сервере должен быть **один** такой `mapspawn.nut`. Если уже был другой —
+**не** дописывать combiner в конец старого файла: `BindDispatchers` затрёт
+корневой `OnGameEvent_player_say`. Старые команды перенеси в отдельный модуль.
 
-Исходник до переноса лежит в корне репозитория: `mapspawn_original.nut` (только справочно).
+Правки `.nut` подхватываются со следующей загрузки карты (смена карты,
+команда `map`, на listen-сервере — reconnect). Уже загруженная VM старый файл сама не перечитает.
+Успешная загрузка пишет в лог `[MC] registered module: …`.

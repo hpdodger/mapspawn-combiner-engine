@@ -30,7 +30,7 @@ local m = {
     description = "DRG-style laser pointer: a beam everyone sees. Check your console for key binding examples.",
 
     // Printed to the player's console by !am_info (chat is too narrow for binds).
-    // Mirrors the Controls section of the README.
+    // Mirrors the Controls section of this module's README.
     console_info = [
         "=== laser_pointer controls ===",
         "The beam shines only while the key is held, and at most max_hold seconds",
