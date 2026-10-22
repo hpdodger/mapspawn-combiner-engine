@@ -2,7 +2,7 @@
 // Чат-команды управления модулями mapspawn combiner. Префикс: !am_
 //
 // Просмотр (help / modules / info / vars) — всем.
-// Изменения (enable / disable / set / save / load / reset) — whitelist в mapspawn_combiner/admins.nut.
+// Изменения (enable / disable / set / save / load / reset / leader) — whitelist в mapspawn_combiner/admins.nut.
 // Сам себя выключить нельзя; в файле настроек тоже не пишется как выключенный.
 //
 // Файл на весь сервер: save/vscripts/mapspawn_combiner/settings.txt
@@ -19,7 +19,7 @@ local m = {
     name        = "admin",
     enabled     = true,
     convars     = {},
-    version     = "1.0.0",
+    version     = "1.1.1",
     description = "Runtime mapspawn combiner module management: the !am_ chat commands.",
     requires_registry = 4,
 
@@ -39,6 +39,7 @@ local m = {
     _CMD_SAVE     = "!am_save",
     _CMD_LOAD     = "!am_load",
     _CMD_RESET    = "!am_reset",
+    _CMD_LEADER   = "!am_leader",
 
     _CMDS            = null,   // built after the table literal — see bottom
     _defaults        = null,   // moduleName -> { var = defaultValue }
@@ -176,7 +177,7 @@ local m = {
         this._msgRaw( hPlayer, "  Author: typical russian (https://steamcommunity.com/id/w_asd/)" );
         foreach ( c in this._CMDS )
             this._msgRaw( hPlayer, "  " + c.cmd + c.args + " - " + c.help );
-        this._msgRaw( hPlayer, "  Viewing is open; enable/disable/set/save/load/reset need mapspawn_combiner/admins.nut whitelist." );
+        this._msgRaw( hPlayer, "  Viewing is open; enable/disable/set/save/load/reset/leader need mapspawn_combiner/admins.nut whitelist." );
         this._msgRaw( hPlayer, "  Settings file: save/vscripts/" + this._SETTINGS_FILE );
     },
 
@@ -316,6 +317,105 @@ local m = {
         }
         this._msg( hPlayer, mod.name + "." + parts[1] + " = " + mod.variables[parts[1]] );
         this._msg( hPlayer, "Runtime only until " + this._CMD_SAVE + "." );
+    },
+
+    function _parseAccountId( raw ) {
+        local s = ::McAuth.TrimSpaces( raw );
+        if ( s == "" )
+            return null;
+        local acc = ::McAuth.AccountIdFromString( s );
+        if ( acc != null )
+            return acc;
+        acc = ::McAuth.AccountIdFromString( s.toupper() );
+        if ( acc != null )
+            return acc;
+        for ( local i = 0; i < s.len(); i++ ) {
+            local c = s[i];
+            if ( c < 48 || c > 57 )
+                return null;
+        }
+        try {
+            local a = s.tointeger();
+            if ( a < 0 )
+                return null;
+            return a;
+        } catch ( e ) {
+            return null;
+        }
+    },
+
+    function _findPlayerByAccountId( acc ) {
+        if ( acc == null )
+            return null;
+        local want = acc.tostring();
+        local hPlayer = null;
+        while ( hPlayer = Entities.FindByClassname( hPlayer, "player" ) ) {
+            local key = ::McAuth.PlayerKey( hPlayer );
+            if ( key != null && key == want )
+                return hPlayer;
+        }
+        return null;
+    },
+
+    function _gameResource() {
+        return Entities.FindByClassname( null, "asw_game_resource" );
+    },
+
+    function _leaderPlayer() {
+        local hRes = this._gameResource();
+        if ( !hRes )
+            return null;
+        local hLeader = NetProps.GetPropEntity( hRes, "m_Leader" );
+        if ( hLeader == null || !hLeader.IsValid() )
+            return null;
+        return hLeader;
+    },
+
+    function _playerSteamId( hTarget ) {
+        if ( hTarget == null || !hTarget.IsValid() )
+            return "?";
+        local net = hTarget.GetNetworkIDString();
+        if ( net == null || net == "" )
+            return "?";
+        return net;
+    },
+
+    function _printCurrentLeader( hPlayer ) {
+        local hLeader = this._leaderPlayer();
+        if ( hLeader == null ) {
+            this._msg( hPlayer, "Current leader: none" );
+            return;
+        }
+        this._msg( hPlayer, "Current leader: " + hLeader.GetPlayerName() + "  " + this._playerSteamId( hLeader ) );
+    },
+
+    function _setLeader( hPlayer, szArgs ) {
+        local s = ::McAuth.TrimSpaces( szArgs );
+        if ( s == "" ) {
+            this._printCurrentLeader( hPlayer );
+            this._msg( hPlayer, "Usage: " + this._CMD_LEADER + " <steamid>" );
+            this._msg( hPlayer, "SteamID as in status / admins.nut: STEAM_1:Y:Z" );
+            return;
+        }
+        local acc = this._parseAccountId( s );
+        if ( acc == null ) {
+            this._printCurrentLeader( hPlayer );
+            this._msg( hPlayer, "Bad SteamID. Use STEAM_1:Y:Z (as in status)." );
+            return;
+        }
+        local hTarget = this._findPlayerByAccountId( acc );
+        if ( hTarget == null ) {
+            this._printCurrentLeader( hPlayer );
+            this._msg( hPlayer, "No such player." );
+            return;
+        }
+        local hRes = this._gameResource();
+        if ( !hRes ) {
+            this._msg( hPlayer, "asw_game_resource not found." );
+            return;
+        }
+        NetProps.SetPropEntity( hRes, "m_Leader", hTarget );
+        this._broadcast( "Leader set to " + hTarget.GetPlayerName() + "  " + this._playerSteamId( hTarget ) );
     },
 
     // ---------- persistence ----------
@@ -471,6 +571,7 @@ m._CMDS = [
     { cmd = m._CMD_SAVE,    args = "",                        help = "save on/off + variables to disk (admin)", admin = true, fn = "_save"     },
     { cmd = m._CMD_LOAD,    args = "",                        help = "re-apply the saved settings (admin)",   admin = true,  fn = "_load"      },
     { cmd = m._CMD_RESET,   args = "",                        help = "restore defaults and clear the file (admin)", admin = true, fn = "_reset" },
+    { cmd = m._CMD_LEADER,  args = " [steamid]",              help = "show current leader; set by SteamID (admin)", admin = true, fn = "_setLeader" },
 ];
 
 ::McRegistry.Register( m );

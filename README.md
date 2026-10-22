@@ -91,6 +91,7 @@ nut/reactivedrop/
 | `!am_save` | whitelist | записать `save/vscripts/mapspawn_combiner/settings.txt` |
 | `!am_load` | whitelist | применить файл (с `OnEnable`/`OnDisable`) |
 | `!am_reset` | whitelist | значения из кода + очистить файл |
+| `!am_leader [steamid]` | whitelist | без аргумента — ник и SteamID текущего лидера; с `STEAM_1:Y:Z` — назначить |
 
 Имя модуля в командах — точное (`laser_pointer`, не `LaserPointer`), как в `!am_modules`.
 
