@@ -41,6 +41,7 @@ const TK_CMD_LANG  = "!tkc_lang"
 const TK_CMD_ON    = "!tkc_on"
 const TK_CMD_OFF   = "!tkc_off"
 const TK_CMD_RESET = "!tkc_reset"
+const TK_CMD_TEST  = "!tkc_test"
 
 // Message ids → translations[lang]
 const TK_MSG_NO_PERMISSION   = "no_permission"
@@ -73,6 +74,11 @@ const TK_MSG_HELP_VERSION    = "help_version"
 const TK_MSG_RANKS_HEADER    = "ranks_header"
 const TK_MSG_RANK_ROW        = "rank_row"
 const TK_MSG_SCORE_LINE      = "score_line"
+const TK_MSG_HELP_TEST       = "help_test"
+const TK_MSG_TEST_NO_MARINE  = "test_no_marine"
+const TK_MSG_TEST_OFF        = "test_off"
+const TK_MSG_TEST_FAIL       = "test_fail"
+const TK_MSG_TEST_DONE       = "test_done"
 
 ::g_TkLangAliases <- {
     ru = "ru",
@@ -126,12 +132,12 @@ const TK_MSG_SCORE_LINE      = "score_line"
         en = "lang → {lang}",
     },
     notify_on = {
-        ru = "Отображение тимкиллов включено",
-        en = "Teamkill display enabled",
+        ru = "Чат о звании и красный текст по центру включены",
+        en = "Rank-up chat and red center text enabled",
     },
     notify_off = {
-        ru = "Отображение тимкиллов выключено",
-        en = "Teamkill display disabled",
+        ru = "Чат о звании и красный текст по центру выключены",
+        en = "Rank-up chat and red center text disabled",
     },
     reset_usage = {
         ru = "Использование: !tkc_reset STEAM_1:0:12345 | !tkc_reset all",
@@ -178,12 +184,32 @@ const TK_MSG_SCORE_LINE      = "score_line"
         en = "!tkc_lang / !mc_lang en|ru — language (shared across combiner)",
     },
     help_on = {
-        ru = "!tkc_on — показать объявления тимкиллов",
-        en = "!tkc_on — show teamkill announcements",
+        ru = "!tkc_on — чат о новом звании и красный текст по центру",
+        en = "!tkc_on — rank-up chat and red center text",
     },
     help_off = {
-        ru = "!tkc_off — скрыть объявления тимкиллов",
-        en = "!tkc_off — hide teamkill announcements",
+        ru = "!tkc_off — скрыть чат о звании и красный текст по центру",
+        en = "!tkc_off — hide rank-up chat and red center text",
+    },
+    help_test = {
+        ru = "!tkc_test — тестовый попап над морпехом (админ)",
+        en = "!tkc_test — test popup over your marine (admin)",
+    },
+    test_no_marine = {
+        ru = "Нет морпеха для попапа.",
+        en = "No marine for the popup.",
+    },
+    test_off = {
+        ru = "Попап выключен. !am_set tk_counter popup 1",
+        en = "Popup is off. !am_set tk_counter popup 1",
+    },
+    test_fail = {
+        ru = "Не удалось показать попап.",
+        en = "Could not show the popup.",
+    },
+    test_done = {
+        ru = "Тест попапа: {n}",
+        en = "Popup test: {n}",
     },
     help_reset = {
         ru = "!tkc_reset STEAM_…|all — сброс игрока / всей статистики (админ)",
@@ -950,17 +976,33 @@ TkShowCenter <- function( message, hPlayer = null, slot = null, displayDelay = 0
     EntFireByHandle( t, "Kill", "", killDelay, null, null )
 }
 
+TkPopupModule <- function() {
+    if ( !( "McRegistry" in getroottable() ) )
+        return null
+    return ::McRegistry.FindModule( "tk_counter" )
+}
+
+TkPopupOn <- function() {
+    local m = TkPopupModule()
+    if ( m == null || !( "variables" in m ) )
+        return false
+    return m.variables.popup != 0
+}
+
 TkAnnounceKill <- function( hKiller, after, lang ) {
     // Bake string NOW — before any later kill in the same frame changes totals.
-    // Kill announce is red HUD only — no chat spam (rank-up still uses chat).
+    // Used when the world popup is off. Red center text only, no kill chat.
     local msg = TkFormatLine( hKiller.GetPlayerName(), after, lang, "kill" )
     TkQueueAnnounce( msg, null )
 }
 
-TkAnnounceRankUp <- function( hKiller, after, lang ) {
+// withCenter: red game_text. Chat always goes to players with notify on.
+TkAnnounceRankUp <- function( hKiller, after, lang, withCenter ) {
     local name = hKiller.GetPlayerName()
     local title = TkRankTitle( after, lang )
-    local center = TkFormatLine( name, after, lang, "rankup" )
+    local center = null
+    if ( withCenter )
+        center = TkFormatLine( name, after, lang, "rankup" )
     local chat = TK_TAG + TkTF( TK_MSG_RANK_UP, lang, {
         name = name,
         title = title,
@@ -1018,6 +1060,7 @@ _TkPrintHelp <- function( hPlayer ) {
         TK_MSG_HELP_ON,
         TK_MSG_HELP_OFF,
         TK_MSG_HELP_RESET,
+        TK_MSG_HELP_TEST,
         TK_MSG_HELP_HELP,
         TK_MSG_HELP_VERSION,
         TK_MSG_HELP_AUTHOR,
@@ -1064,9 +1107,20 @@ _OnEntityKilled <- function( params ) {
     if ( result == null )
         return
 
-    TkAnnounceKill( hKiller, result.after, result.lang )
+    local popup = TkPopupOn()
+    if ( popup ) {
+        local mod = TkPopupModule()
+        if ( mod != null ) {
+            local fromN = result.before
+            if ( fromN < 1 )
+                fromN = result.after
+            mod._showPopup( attacker, fromN, result.after )
+        }
+    } else {
+        TkAnnounceKill( hKiller, result.after, result.lang )
+    }
     if ( TkRankIndex( result.after ) > TkRankIndex( result.before ) )
-        TkAnnounceRankUp( hKiller, result.after, result.lang )
+        TkAnnounceRankUp( hKiller, result.after, result.lang, !popup )
 }
 
 _OnPlayerActivate <- function( hPlayer ) {
@@ -1212,6 +1266,36 @@ _OnPlayerSay <- function( params ) {
             return
         }
         TkChat( hPlayer, lang, TK_MSG_NOTIFY_OFF )
+        return
+    }
+
+    if ( cmd == TK_CMD_TEST ) {
+        if ( !TkIsAdmin( hPlayer ) ) {
+            TkChat( hPlayer, lang, TK_MSG_NO_PERMISSION )
+            return
+        }
+        if ( !TkPopupOn() ) {
+            TkChat( hPlayer, lang, TK_MSG_TEST_OFF )
+            return
+        }
+        local marine = hPlayer.GetMarine()
+        if ( marine == null || !marine.IsValid() ) {
+            TkChat( hPlayer, lang, TK_MSG_TEST_NO_MARINE )
+            return
+        }
+        local rec = TkTouchPlayer( hPlayer )
+        local n = 1
+        local fromN = 0
+        if ( rec != null && rec.count > 0 ) {
+            n = rec.count
+            fromN = n - 1
+        }
+        local mod = TkPopupModule()
+        if ( mod == null || !mod._showPopup( marine, fromN, n ) ) {
+            TkChat( hPlayer, lang, TK_MSG_TEST_FAIL )
+            return
+        }
+        TkChat( hPlayer, lang, TK_MSG_TEST_DONE, { n = n } )
         return
     }
 

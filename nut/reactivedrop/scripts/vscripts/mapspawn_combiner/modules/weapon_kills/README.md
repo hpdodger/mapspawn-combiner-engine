@@ -33,6 +33,7 @@ modules/weapon_kills/
 resource/challenges/weapon_kills.txt
 scripts/vscripts/challenge_weapon_kills.nut   — пустой
 scripts/vscripts/weapon_kills/wkc_popup_hud.nut
+scripts/vscripts/tk_counter/tkc_popup_hud.nut — попап тимкилла (модуль tk_counter)
 ```
 
 Новый трек оружия = правка только `tracks.nut` на сервере. Stub трогать не нужно,
@@ -151,8 +152,10 @@ Popup висит в той же высотной зоне, что vanilla strang
 
 На dedicated: опубликовать stub как Workshop item, `rd_enable_workshop_item`,
 у клиентов `rd_workshop_temp_subscribe 3`. Локально достаточно скопировать
-`resource/challenges/weapon_kills.txt` и `scripts/vscripts/weapon_kills/`
+`resource/challenges/weapon_kills.txt`, `scripts/vscripts/weapon_kills/`
+и `scripts/vscripts/tk_counter/tkc_popup_hud.nut`
 (+ пустой `challenge_weapon_kills.nut`) в дерево игры.
+Челлендж один: оба Paint-скрипта едут в этом дополнении.
 
 ## Треки
 

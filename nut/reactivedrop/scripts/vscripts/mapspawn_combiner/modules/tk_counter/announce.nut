@@ -1,4 +1,6 @@
-// TK Counter — red on-screen announcement (game_text) layout.
+// TK Counter — red center announcement (game_text), used when popup = 0.
+// When popup = 1 the kill count is a world popup (tkc_popup_hud.nut);
+// this file still supplies the rank-up chat text and the center-text layout.
 //
 // Squirrel has no JS template literals / expressions inside ${...}.
 // Placeholders are plain substitutions (see TkFill):

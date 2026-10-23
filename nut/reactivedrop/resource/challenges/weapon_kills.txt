@@ -1,7 +1,7 @@
 "CHALLENGE"
 {
 	"name"			"Weapon Kills HUD"
-	"description"	"v0.4.4 - Client HUD scripts for mapspawn combiner weapon kill tracks. YOU DONT NEED IT STANDALONE."
+	"description"	"v0.4.5 / tk 1.4.4 - Client HUD popups for weapon kills and teamkills. YOU DONT NEED IT STANDALONE."
 
 	"required_on_client"	"1"
 
