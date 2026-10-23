@@ -2,7 +2,7 @@
 // Чат-команды управления модулями mapspawn combiner. Префикс: !am_
 //
 // Просмотр (help / modules / info / vars) — всем.
-// Изменения (enable / disable / set / save / load / reset / leader) — whitelist в mapspawn_combiner/admins.nut.
+// Изменения (enable / disable / set / save / load / reset / leader / kick) — whitelist в mapspawn_combiner/admins.nut.
 // Сам себя выключить нельзя; в файле настроек тоже не пишется как выключенный.
 //
 // Файл на весь сервер: save/vscripts/mapspawn_combiner/settings.txt
@@ -33,8 +33,8 @@ local _strings = {
         ru = "  Справка модулей: !tkc_help  !laser  !wkc_help  !mc_lang",
     },
     help_acl = {
-        en = "  Viewing is open; enable/disable/set/save/load/reset/leader need mapspawn_combiner/admins.nut whitelist.",
-        ru = "  Просмотр открыт; enable/disable/set/save/load/reset/leader — whitelist в mapspawn_combiner/admins.nut.",
+        en = "  Viewing is open; enable/disable/set/save/load/reset/leader/kick need mapspawn_combiner/admins.nut whitelist.",
+        ru = "  Просмотр открыт; enable/disable/set/save/load/reset/leader/kick — whitelist в mapspawn_combiner/admins.nut.",
     },
     help_settings = {
         en = "  Settings file: save/vscripts/{file}",
@@ -83,6 +83,10 @@ local _strings = {
     cmd_leader = {
         en = "show current leader; set by SteamID (admin)",
         ru = "текущий лидер; назначить по SteamID (admin)",
+    },
+    cmd_kick = {
+        en = "kick a player by SteamID (admin)",
+        ru = "кикнуть игрока по SteamID (admin)",
     },
     no_perm = {
         en = "No permission. Type {help} for the command list.",
@@ -204,13 +208,21 @@ local _strings = {
         en = "SteamID as in status / admins.nut: STEAM_1:Y:Z",
         ru = "SteamID как в status / admins.nut: STEAM_1:Y:Z",
     },
+    kick_usage = {
+        en = "Usage: {cmd} <steamid> [reason]",
+        ru = "Использование: {cmd} <steamid> [reason]",
+    },
+    kick_ok = {
+        en = "Kicked {name}  {steam}",
+        ru = "Кикнут {name}  {steam}",
+    },
 };
 
 local m = {
     name        = "admin",
     enabled     = true,
     convars     = {},
-    version     = "1.2.0",
+    version     = "1.3.0",
     description = "Runtime mapspawn combiner module management: the !am_ chat commands.",
     requires_registry = 4,
 
@@ -232,6 +244,7 @@ local m = {
     _CMD_LOAD     = "!am_load",
     _CMD_RESET    = "!am_reset",
     _CMD_LEADER   = "!am_leader",
+    _CMD_KICK     = "!am_kick",
 
     _CMDS            = null,   // built after the table literal — see bottom
     _defaults        = null,   // moduleName -> { var = defaultValue }
@@ -647,6 +660,51 @@ local m = {
         } );
     },
 
+    function _sanitizeKickReason( s ) {
+        local out = "";
+        local n = s.len();
+        for ( local i = 0; i < n; i++ ) {
+            local c = s[i];
+            if ( c == 34 || c == 39 || c == 10 || c == 13 || c == 59 || c == 92 )
+                continue;
+            out += s.slice( i, i + 1 );
+        }
+        return ::McAuth.TrimSpaces( out );
+    },
+
+    function _kickPlayer( hPlayer, szArgs ) {
+        local s = ::McAuth.TrimSpaces( szArgs );
+        if ( s == "" ) {
+            this._msgId( hPlayer, "kick_usage", { cmd = this._CMD_KICK } );
+            this._msgId( hPlayer, "leader_hint" );
+            return;
+        }
+        local idPart = s;
+        local reason = "";
+        local sp = s.find( " " );
+        if ( sp != null ) {
+            idPart = s.slice( 0, sp );
+            reason = this._sanitizeKickReason( s.slice( sp + 1 ) );
+        }
+        local acc = this._parseAccountId( idPart );
+        if ( acc == null ) {
+            this._msgId( hPlayer, "bad_steamid" );
+            return;
+        }
+        local hTarget = this._findPlayerByAccountId( acc );
+        if ( hTarget == null ) {
+            this._msgId( hPlayer, "no_player" );
+            return;
+        }
+        if ( reason == "" )
+            reason = "Kicked by admin";
+        SendToServerConsole( "kickid " + hTarget.GetPlayerUserID() + " " + reason );
+        this._msgId( hPlayer, "kick_ok", {
+            name = hTarget.GetPlayerName(),
+            steam = this._playerSteamId( hTarget ),
+        } );
+    },
+
     // ---------- persistence ----------
 
     function _ensureDefaults() {
@@ -801,6 +859,7 @@ m._CMDS = [
     { cmd = m._CMD_LOAD,    args = "",                        help_id = "cmd_load",    admin = true,  fn = "_load"      },
     { cmd = m._CMD_RESET,   args = "",                        help_id = "cmd_reset",   admin = true,  fn = "_reset"     },
     { cmd = m._CMD_LEADER,  args = " [steamid]",              help_id = "cmd_leader",  admin = true,  fn = "_setLeader" },
+    { cmd = m._CMD_KICK,    args = " <steamid> [reason]",     help_id = "cmd_kick",    admin = true,  fn = "_kickPlayer" },
 ];
 
 ::McRegistry.Register( m );

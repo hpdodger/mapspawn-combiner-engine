@@ -12,7 +12,7 @@
 
 Просмотр (`help` / `modules` / `info` / `vars`) — всем.
 
-Изменения (`enable` / `disable` / `set` / `save` / `load` / `reset` / `leader`) —
+Изменения (`enable` / `disable` / `set` / `save` / `load` / `reset` / `leader` / `kick`) —
 список SteamID в `mapspawn_combiner/admins.nut` (`McAuth`). Формат как в `status`:
 `STEAM_1:Y:Z`. Тот же список использует `!tkc_reset`.
 
@@ -36,6 +36,7 @@
 | `!am_load` | список SteamID | применить файл (с `OnEnable`/`OnDisable`) |
 | `!am_reset` | список SteamID | значения из кода + очистить файл |
 | `!am_leader [steamid]` | список SteamID | без аргумента — ник и SteamID текущего лидера; с `STEAM_1:Y:Z`, `[U:1:n]` или числовым идентификатором аккаунта — назначить игрока, который сейчас на сервере |
+| `!am_kick <steamid> [reason]` | список SteamID | кикнуть игрока, который сейчас на сервере; SteamID как у `!am_leader`; причина необязательна |
 
 Префикс `!am_` не пересекается с командами счётчика `!tkc`.
 
@@ -53,3 +54,4 @@
 - Автосохранения при переключении нет.
 
 `!am_leader` не заменяет `!setleader` из модуля `legacy_chat`.
+`!am_kick` кикает через `kickid` движка (игрок должен быть на сервере).
