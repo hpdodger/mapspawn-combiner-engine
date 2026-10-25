@@ -1,7 +1,8 @@
 // weapon_kills/wkc_popup_hud.nut — клиентский Paint для tier-up popup.
 // Вешается на rd_hud_vscript (client_vscript). Видят все, у кого есть этот файл.
 //
-// Иконка приходит с сервера в String 0 (путь EquipIcon) — клиентский список треков не нужен.
+// Иконка приходит с сервера в String 0 (EquipIcon или vgui/weapon_kills/heal_icon).
+// Клиентский список треков не нужен.
 // Новые оружия = правка только серверного tracks.nut, Workshop-stub можно не обновлять.
 //
 // Слоты (сервер пишет из !am_set / variables, клиент читает):
@@ -10,12 +11,14 @@
 //   Int 0    — старт накрутки числа
 //   Int 1    — конец накрутки / порог тира
 //   Int 2    — индекс стека (дальше = левее)
-//   Int 3..5 — accent RGB (полоска + tint иконки)
+//   Int 3..5 — accent RGB (полоска)
 //   Int 6..8 — text RGB
 //   Int 9..11 — bg RGB
 //   Int 12   — bg alpha 0..255
 //   Int 13   — content max alpha 0..255
 //   Int 14   — 1 = сервер записал стиль (иначе fallback)
+//   Int 15..17 — icon tint RGB (heal: 255 255 255, без cyan)
+//   Int 18   — 1 = сервер записал icon tint (иначе tint = accent)
 //   Float 0  — Time() начала показа
 //   Float 1  — Time() конца
 //   Float 2  — popup_x @768p
@@ -122,6 +125,10 @@ function Paint() {
     local bb = self.GetInt( 11 );
     local bgA = self.GetInt( 12 );
     local maxA = self.GetInt( 13 );
+    local ir = self.GetInt( 15 );
+    local ig = self.GetInt( 16 );
+    local ib = self.GetInt( 17 );
+    local iconTintWritten = self.GetInt( 18 );
 
     if ( self.GetInt( 14 ) != 1 ) {
         screenX = FALLBACK.x;
@@ -136,6 +143,10 @@ function Paint() {
         br = FALLBACK.bg[0]; bg = FALLBACK.bg[1]; bb = FALLBACK.bg[2];
         bgA = FALLBACK.bg_a;
         maxA = FALLBACK.alpha;
+        iconTintWritten = 0;
+    }
+    if ( iconTintWritten != 1 ) {
+        ir = ar; ig = ag; ib = ab;
     }
     if ( bgA < 0 ) bgA = 0; if ( bgA > 255 ) bgA = 255;
     if ( maxA < 0 ) maxA = 0; if ( maxA > 255 ) maxA = 255;
@@ -207,7 +218,7 @@ function Paint() {
         self.PaintTexturedRectangle(
             cursor, iconTop,
             cursor + iconW, iconTop + iconH,
-            ar, ag, ab, alpha,
+            ir, ig, ib, alpha,
             tex
         );
         cursor += iconW + textGap;

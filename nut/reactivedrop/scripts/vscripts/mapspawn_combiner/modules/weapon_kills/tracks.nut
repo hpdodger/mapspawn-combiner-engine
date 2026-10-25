@@ -2,9 +2,15 @@
 // Таблица треков: несколько classname оружия могут делить один id / иконку / счётчик.
 // icon уходит на клиент через rd_hud_vscript SetString(0) — клиентский список треков не нужен.
 //
-// Не считаем: турели (sentry*), мины (mines / laser_mines), тесла-трап,
-// хил/саппорт/утилиты, метательные гранаты и прочий deployable offhand.
-// Атрибуция — только held weapon в OnTakeDamage_Alive_Any.
+// kind: "kill" (по умолчанию, можно не писать) или "heal".
+// Убийства: OnTakeDamage_Alive_Any, held weapon.
+// Лечение: OnGameEvent_marine_healed, classname из weapon_class
+//   (у маяка это снаряд asw_healgrenade_projectile).
+// Один classname может быть в kill-треке и отдельно в heal-треке
+// (medrifle / medrifle_heal) — индексы раздельные.
+//
+// Не считаем убийствами: турели (sentry*), мины, тесла-трап,
+// аптечку (medkit), сварку, аммо, метательные гранаты и прочий offhand.
 
 ::WkcTracks <- [
     // --- primary / unlockable ---
@@ -182,7 +188,46 @@
         icon    = "vgui/swarm/EquipIcons/EquipPowerFist",
         label   = { ru = "Кастет", en = "Power Fist" },
     },
+
+    // --- healing (queued HP via marine_healed; separate save keys) ---
+    {
+        id      = "heal_gun",
+        kind    = "heal",
+        weapons = [ "asw_weapon_heal_gun" ],
+        icon    = "vgui/weapon_kills/heal_icon",
+        label   = { ru = "Лечебная пушка", en = "Heal Gun" },
+    },
+    {
+        id      = "healamp",
+        kind    = "heal",
+        weapons = [ "asw_weapon_healamp_gun" ],
+        icon    = "vgui/weapon_kills/heal_icon",
+        label   = { ru = "Лечебно-усиливающая пушка", en = "Heal Amp" },
+    },
+    {
+        id      = "medrifle_heal",
+        kind    = "heal",
+        weapons = [ "asw_weapon_medrifle" ],
+        icon    = "vgui/weapon_kills/heal_icon",
+        label   = { ru = "Медицинский ПП (лечение)", en = "Med Rifle (heal)" },
+    },
+    {
+        id      = "satchel",
+        kind    = "heal",
+        weapons = [ "asw_weapon_medical_satchel" ],
+        icon    = "vgui/weapon_kills/heal_icon",
+        label   = { ru = "Ящик медикаментов", en = "Medical Satchel" },
+    },
+    {
+        id      = "beacon",
+        kind    = "heal",
+        weapons = [ "asw_healgrenade_projectile", "asw_weapon_heal_grenade" ],
+        icon    = "vgui/weapon_kills/heal_icon",
+        label   = { ru = "Целительный маячок", en = "Heal Beacon" },
+    },
 ];
 
-// classname оружия → индекс в ::WkcTracks (заполняется при загрузке модуля).
+// classname → индекс в ::WkcTracks. Kill и heal раздельно:
+// asw_weapon_medrifle есть и в medrifle, и в medrifle_heal.
 ::WkcWeaponIndex <- {};
+::WkcHealWeaponIndex <- {};

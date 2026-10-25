@@ -1,8 +1,12 @@
 # weapon_kills
 
-Счётчик убийств пришельцев по трекам оружия в духе strange device: у каждого
-оружия свой накопительный счёт, при достижении порога над морпехом на короткое
-время показывается иконка и число порога.
+Счётчик убийств пришельцев по трекам оружия и лечения медиком в духе strange
+device: у каждого оружия свой накопительный счёт, при достижении порога над
+морпехом на короткое время показывается иконка и число порога. Убийства —
+EquipIcon, лечение — крест эмоции медика.
+
+Публичное имя stub-челленджа: **Stat Tracks HUD**. Внутренние id без изменений:
+модуль `weapon_kills`, чат `!wkc`.
 
 Логика и сохранение — always-on модуль mapspawn combiner. Картинка на экране —
 отдельный клиентский Paint-скрипт, который клиенты получают через stub-челлендж
@@ -25,8 +29,8 @@
 ```
 modules/weapon_kills/
   module_weapon_kills.nut   — модуль (хуки, чат, persist, спавн HUD)
-  tracks.nut                — таблица треков (id, classname, icon, подписи)
-  tiers.nut                 — пороги popup (::WkcFixedTiers / ::WkcStepTier)
+  tracks.nut                — таблица треков (id, kind, classname, icon, подписи)
+  tiers.nut                 — пороги popup (kill / heal сетки)
   README.md
 
 # клиентский stub (рядом в nut/reactivedrop/)
@@ -34,29 +38,62 @@ resource/challenges/weapon_kills.txt
 scripts/vscripts/challenge_weapon_kills.nut   — пустой
 scripts/vscripts/weapon_kills/wkc_popup_hud.nut
 scripts/vscripts/tk_counter/tkc_popup_hud.nut — попап тимкилла (модуль tk_counter)
+materials/vgui/tk_counter/dead_icon.vmt + .vtf
+materials/vgui/weapon_kills/heal_icon.vmt + .vtf
 ```
 
 Новый трек оружия = правка только `tracks.nut` на сервере. Stub трогать не нужно,
-пока не меняется сам Paint. Иконки — штатные `vgui/swarm/EquipIcons/…` из игры.
+пока не меняется сам Paint и не добавляется новая текстура. Иконки убийств —
+штатные `vgui/swarm/EquipIcons/…` из игры. Крест лечения едет в stub:
+`vgui/weapon_kills/heal_icon` (копия эмоции медика `EmoteMedic`).
 
 ## Как считает
+
+### Убийства
 
 Хук `OnTakeDamage_Alive_Any` (урон не меняется):
 
 - attacker — inhabited `asw_marine`
 - victim — `IsAlien()`
-- `weapon` — classname есть в `tracks.nut`
+- `weapon` — classname есть в kill-треке `tracks.nut`
 - удар смертельный: `damage >= victim.GetHealth()`
 - убийство записывается командиру морпеха (`GetCommander()`), ключ — `McAuth.PlayerKey`
 
-Не считаются (намеренно): турели (`sentry*`), мины, тесла-трап, хил/аммо/сварка
-и прочий саппорт, метательные гранаты и прочий deployable offhand. Считается
-только оружие в руках, которое пришло в параметре `weapon`.
+Не считаются (намеренно): турели (`sentry*`), мины, тесла-трап, аптечка
+(`medkit`), аммо, сварка и прочий саппорт, метательные гранаты и прочий
+deployable offhand. Считается только оружие в руках, которое пришло в
+параметре `weapon`.
+
+### Лечение
+
+Событие `marine_healed` (поле `amount_healed` — HP, поставленные в очередь
+`AddSlowHeal`). Поле `amount` — кредит медали/strange: очередь минус
+оставшийся дружественный огонь; после «подстрелил своего → полечил»
+там часто 0, его не используем как основной счёт:
+
+- `weapon_class` есть в heal-треке (`heal_gun`, `healamp` только поток лечения,
+  `medrifle_heal`, `satchel`, `beacon`)
+- аптечка (`asw_weapon_medkit`) не считается
+- самолечение считается
+- Med Rifle: убийства пишутся в `medrifle=`, HP — в `medrifle_heal=` (не смешивать)
+- маяк: `weapon_class` обычно `asw_healgrenade_projectile`; после смерти медика
+  атрибуция через `GetCommander()` / `McAuth.PlayerKey`, inhabited не требуется
+- скриптовый/карточный маяк без владельца (`medic_entindex < 0` или пустой
+  `weapon_class`) пропускается
+- `player_heal` не используется
+
+Ящик медикаментов — один большой сброс в очередь на одного рядом. Маяк —
+много мелких тиков по зоне, отдельные счётчики.
 
 ### Пороги (тиры)
 
-Правка только `tiers.nut` (`::WkcFixedTiers`, `::WkcStepTier`).
-Сейчас по умолчанию: `1`, `5`, `10`, `50`, `100`, дальше каждые `500`.
+Правка только `tiers.nut`.
+
+Убийства (`::WkcFixedTiers`, `::WkcStepTier`): `1`, `5`, `10`, `50`, `100`,
+дальше каждые `500`.
+
+Лечение (`::WkcHealFixedTiers`, `::WkcHealStepTier`): `50`, `100`, `500`,
+дальше каждые `1000`.
 
 На popup показывается **порог**, не сырой счётчик. Число коротко накручивается
 от предыдущего порога к новому (`popup_anim_time`). В чат по умолчанию ничего
@@ -66,7 +103,7 @@ scripts/vscripts/tk_counter/tkc_popup_hud.nut — попап тимкилла (�
 
 | Команда | Кто | Действие |
 |---|---|---|
-| `!wkc` | все | свои счётчики и следующий порог |
+| `!wkc` | все | свои счётчики убийств, затем блок лечения, и следующий порог |
 | `!wkc_help` | все | справка |
 | `!wkc_reset` | admin | обнулить **свои** сохранённые треки |
 | `!wkc_test <id\|classname>` | admin | тестовый popup: накрутка 0→127 |
@@ -78,6 +115,10 @@ scripts/vscripts/tk_counter/tkc_popup_hud.nut — попап тимкилла (�
 !wkc_test rifle
 !wkc_test asw_weapon_deagle
 !wkc_test deagle
+!wkc_test heal_gun
+!wkc_test beacon
+!wkc_test satchel
+!wkc_test medrifle_heal
 ```
 
 Без аргумента или при неизвестном имени — usage и список id треков.
@@ -102,7 +143,7 @@ scripts/vscripts/tk_counter/tkc_popup_hud.nut — попап тимкилла (�
 | `popup_x` | `-120` | смещение X, px @768p (левее головы / strange) |
 | `popup_y` | `-20` | смещение Y, px @768p (выше головы = отрицательное) |
 | `popup_stack_gap` | `72` | шаг стека влево при нескольких popup |
-| `popup_icon_w` / `popup_icon_h` | `56` / `28` | размер EquipIcon (в HUD игры обычные иконки 2:1) |
+| `popup_icon_w` / `popup_icon_h` | `56` / `28` | размер EquipIcon убийств (2:1). Крест лечения всегда 32×32 |
 | `popup_scale` | `1.0` | множитель размера (иконка, отступы, gap) |
 | `popup_accent` | `80 180 255` | RGB полоски и tint иконки |
 | `popup_text` | `255 0 0` | RGB числа |
@@ -127,7 +168,9 @@ scripts/vscripts/tk_counter/tkc_popup_hud.nut — попап тимкилла (�
 - `<accountId>.txt` — строка `#name=…` и пары `trackId=count`
 
 Ключ игрока как у TK: `STEAM_X:Y:Z` → `Z*2+Y` через `McAuth.PlayerKey`.
-Кэш в памяти модуля; на диск пишется при каждом засчитанном убийстве.
+Кэш в памяти модуля. Убийства пишутся на диск сразу. Лечение помечается
+грязным и сбрасывается раз в ~1.5 с из `Update`, плюс на `Cleanup` /
+выключении модуля (иначе хилган колотит `StringToFile` на каждый тик очереди).
 
 ## Popup / слоты HUD
 
@@ -141,12 +184,13 @@ Popup висит в той же высотной зоне, что vanilla strang
 | Слот | Значение |
 |---|---|
 | Entity 0 | `asw_marine` (якорь) |
-| String 0 | путь EquipIcon |
+| String 0 | путь иконки (EquipIcon или `vgui/weapon_kills/heal_icon`) |
 | Int 0 / 1 / 2 | старт накрутки / порог / индекс стека |
-| Int 3..5 | accent RGB |
+| Int 3..5 | accent RGB (полоска) |
 | Int 6..8 | text RGB |
 | Int 9..11 | bg RGB |
 | Int 12 / 13 / 14 | bg alpha / content alpha / style marker (`1`) |
+| Int 15..17 / 18 | tint иконки / маркер (`1`); лечение: белый, без cyan |
 | Float 0 / 1 | Time() начала / конца показа |
 | Float 2..8 | x, y, stack_gap, icon_w, icon_h, scale, anim_time |
 
@@ -192,4 +236,15 @@ Popup висит в той же высотной зоне, что vanilla strang
 | `energy_shield` | `asw_weapon_energy_shield` | Shield Rifle |
 | `powerfist` | `asw_weapon_powerfist` | Кастет |
 
+Лечение (`kind = "heal"`, иконка `vgui/weapon_kills/heal_icon`):
+
+| id | Classname | Подпись |
+|---|---|---|
+| `heal_gun` | `asw_weapon_heal_gun` | Лечебная пушка |
+| `healamp` | `asw_weapon_healamp_gun` | Лечебно-усиливающая пушка (только поток лечения) |
+| `medrifle_heal` | `asw_weapon_medrifle` | Медицинский ПП (лечение) |
+| `satchel` | `asw_weapon_medical_satchel` | Ящик медикаментов |
+| `beacon` | `asw_healgrenade_projectile`, `asw_weapon_heal_grenade` | Целительный маячок |
+
 Id `saw` оставлен с ранней версии — чтобы не сбросить уже накопленные save.
+Ключ `medrifle` — только убийства; HP этого оружия в `medrifle_heal`.

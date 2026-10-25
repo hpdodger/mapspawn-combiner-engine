@@ -1,6 +1,7 @@
 // mapspawn_combiner/modules/weapon_kills/module_weapon_kills.nut
-// Счётчик убийств по трекам оружия (strange-like).
-// Подсчёт: OnTakeDamage_Alive_Any — inhabited marine → alien, lethal hit, оружие в треке.
+// Счётчик убийств по трекам оружия и лечения медиком (strange-like).
+// Убийства: OnTakeDamage_Alive_Any — inhabited marine → alien, lethal hit, оружие в kill-треке.
+// Лечение: OnGameEvent_marine_healed — queued HP (amount), classname в heal-треке.
 // Persist: save/vscripts/weapon_kills/<accountId>.txt + index.txt
 // HUD: rd_hud_vscript + client weapon_kills/wkc_popup_hud.nut (stub challenge weapon_kills).
 // Чат: !wkc / !wkc_help / !wkc_reset / !wkc_test (test — McAuth).
@@ -16,16 +17,16 @@ IncludeScript( "mapspawn_combiner/modules/weapon_kills/tiers" );
 
 local _strings = {
     tip = {
-        en = "weapon kills — !wkc / !wkc_help",
-        ru = "убийства с оружия — !wkc / !wkc_help",
+        en = "stat tracks — !wkc / !wkc_help",
+        ru = "stat tracks — !wkc / !wkc_help",
     },
     help_title = {
-        en = "weapon kills — tracks + world popup",
-        ru = "убийства с оружия — треки + popup",
+        en = "stat tracks — weapon kills, healing, world popup",
+        ru = "stat tracks — убийства, лечение, popup",
     },
     help_wkc = {
-        en = "!wkc — your track counts",
-        ru = "!wkc — ваши счётчики",
+        en = "!wkc — your kill and heal counts",
+        ru = "!wkc — ваши счётчики убийств и лечения",
     },
     help_help = {
         en = "!wkc_help — this help",
@@ -40,8 +41,8 @@ local _strings = {
         ru = "!wkc_test <id|classname> — тестовый popup (admin)",
     },
     help_test_ex = {
-        en = "  e.g. !wkc_test rifle  /  !wkc_test asw_weapon_deagle",
-        ru = "  напр. !wkc_test rifle  /  !wkc_test asw_weapon_deagle",
+        en = "  e.g. !wkc_test rifle  /  !wkc_test beacon  /  !wkc_test heal_gun",
+        ru = "  напр. !wkc_test rifle  /  !wkc_test beacon  /  !wkc_test heal_gun",
     },
     help_toggle = {
         en = "toggle: !am_enable / !am_disable weapon_kills",
@@ -91,6 +92,10 @@ local _strings = {
         en = "test popup: {label} [{id}] {n}",
         ru = "тест popup: {label} [{id}] {n}",
     },
+    stats_heal_hdr = {
+        en = "healing:",
+        ru = "лечение:",
+    },
     stats_line = {
         en = "{label}: {count}",
         ru = "{label}: {count}",
@@ -109,13 +114,14 @@ local m = {
     name        = "weapon_kills",
     enabled     = true,
     convars     = {},
-    version     = "0.4.5",
-    description = "Per-weapon kill tracks (strange-like): count, save, !wkc, world popup.",
+    version     = "0.5.1",
+    description = "Per-weapon kill tracks and medic heal tracks: count, save, !wkc, world popup.",
     requires_registry = 4,
 
     console_info = [
         "=== weapon_kills ===",
-        "Counts alien kills per weapon track; tier-up shows EquipIcon + number over the marine.",
+        "Counts alien kills per weapon track and medic queued HP; tier-up shows icon + number over the marine.",
+        "Kill popup: EquipIcon. Heal popup: medic emote cross (vgui/weapon_kills/heal_icon).",
         "Client Paint needs challenge stub weapon_kills (required_on_client) on the client.",
         "Chat: !wkc / !wkc_help / !wkc_reset (admin) / !wkc_test (admin, force popup)",
         "Language: !mc_lang en|ru (shared McI18n, default en)",
@@ -123,6 +129,7 @@ local m = {
         "Colors are RGB strings, e.g. !am_set weapon_kills popup_accent \"80 180 255\"",
         "Position (px @768p): popup_x (left of head), popup_y (above head = negative)",
         "Size: popup_scale multiplies icon/offsets (1.0 = default @768p)",
+        "Heal icon size is 32x32 per popup and ignores popup_icon_w / popup_icon_h.",
     ],
 
     _PREFIX     = "[WK] ",
@@ -133,10 +140,15 @@ local m = {
     _CLIENT_SCRIPT = "weapon_kills/wkc_popup_hud.nut",
     _strings    = _strings,
 
-    // Пороги: ::WkcFixedTiers / ::WkcStepTier в tiers.nut
+    // Пороги: ::WkcFixedTiers / ::WkcStepTier и heal-сетка в tiers.nut
+    _HEAL_ICON_W = 32.0,
+    _HEAL_ICON_H = 32.0,
+    _SAVE_FLUSH  = 1.5,   // сек; heal gun иначе пишет диск на каждый тик очереди
 
-    _cache  = null,   // accountId -> { tracks = { id = count }, name = "…" }
-    _popups = null,   // [ { ent, marine, hideAt }, … ]
+    _cache    = null,   // accountId -> { tracks = { id = count }, name = "…" }
+    _popups   = null,   // [ { ent, marine, hideAt }, … ]
+    _dirty    = null,   // accountId -> true (отложенный save лечения)
+    _dirtyAt  = 0.0,
 
     // ---------- messaging / i18n ----------
 
@@ -169,19 +181,39 @@ local m = {
 
     // ---------- tracks lookup ----------
 
+    function _kindOf( track ) {
+        if ( track == null )
+            return "kill";
+        if ( ( "kind" in track ) && track.kind != null && track.kind.tostring() == "heal" )
+            return "heal";
+        return "kill";
+    },
+
     function _rebuildWeaponIndex() {
         ::WkcWeaponIndex = {};
+        ::WkcHealWeaponIndex = {};
         for ( local i = 0; i < ::WkcTracks.len(); i++ ) {
             local tr = ::WkcTracks[i];
+            local dest = ::WkcWeaponIndex;
+            if ( this._kindOf( tr ) == "heal" )
+                dest = ::WkcHealWeaponIndex;
             foreach ( w in tr.weapons )
-                ::WkcWeaponIndex[w] <- i;
+                dest[w] <- i;
         }
     },
 
-    function _trackByWeapon( classname ) {
-        if ( classname == null || !( classname in ::WkcWeaponIndex ) )
+    function _trackByWeapon( classname, kind = "kill" ) {
+        if ( classname == null )
             return null;
-        return ::WkcTracks[::WkcWeaponIndex[classname]];
+        local idx = ::WkcWeaponIndex;
+        if ( kind == "heal" ) {
+            if ( !( "WkcHealWeaponIndex" in getroottable() ) )
+                return null;
+            idx = ::WkcHealWeaponIndex;
+        }
+        if ( !( classname in idx ) )
+            return null;
+        return ::WkcTracks[idx[classname]];
     },
 
     function _labelOf( track, lang ) {
@@ -200,16 +232,28 @@ local m = {
 
     // ---------- tiers ----------
 
+    function _tierFixed( kind ) {
+        if ( kind == "heal" && ( "WkcHealFixedTiers" in getroottable() ) )
+            return ::WkcHealFixedTiers;
+        return ::WkcFixedTiers;
+    },
+
+    function _tierStep( kind ) {
+        if ( kind == "heal" && ( "WkcHealStepTier" in getroottable() ) )
+            return ::WkcHealStepTier;
+        return ::WkcStepTier;
+    },
+
     // Высший достигнутый порог для count; 0 если ни одного.
-    function _tierOf( count ) {
+    function _tierOf( count, kind = "kill" ) {
         if ( count == null || count < 1 )
             return 0;
         local best = 0;
-        foreach ( t in ::WkcFixedTiers ) {
+        foreach ( t in this._tierFixed( kind ) ) {
             if ( count >= t )
                 best = t;
         }
-        local step = ::WkcStepTier;
+        local step = this._tierStep( kind );
         if ( count >= step ) {
             local t = ( count / step ).tointeger() * step;
             if ( t > best )
@@ -219,15 +263,15 @@ local m = {
     },
 
     // Следующий порог после count, или null.
-    function _nextTier( count ) {
+    function _nextTier( count, kind = "kill" ) {
         if ( count == null )
             count = 0;
-        foreach ( t in ::WkcFixedTiers ) {
+        foreach ( t in this._tierFixed( kind ) ) {
             if ( count < t )
                 return t;
         }
-        local step = ::WkcStepTier;
-        local cur = this._tierOf( count );
+        local step = this._tierStep( kind );
+        local cur = this._tierOf( count, kind );
         if ( cur < step )
             return step;
         return cur + step;
@@ -355,6 +399,48 @@ local m = {
             return;
         StringToFile( this._playerFile( id ), this._serializePlayer( this._cache[id] ) );
         this._ensureInIndex( id );
+        this._clearDirtyId( id );
+    },
+
+    function _markDirty( id ) {
+        if ( this._dirty == null )
+            this._dirty = {};
+        local empty = true;
+        foreach ( _k, _v in this._dirty ) {
+            empty = false;
+            break;
+        }
+        if ( empty )
+            this._dirtyAt = Time();
+        this._dirty[id] <- true;
+    },
+
+    function _clearDirtyId( id ) {
+        if ( this._dirty == null || !( id in this._dirty ) )
+            return;
+        local next = {};
+        local empty = true;
+        foreach ( k, v in this._dirty ) {
+            if ( k == id )
+                continue;
+            next[k] <- v;
+            empty = false;
+        }
+        this._dirty = next;
+        if ( empty )
+            this._dirtyAt = 0.0;
+    },
+
+    function _flushDirty() {
+        if ( this._dirty == null )
+            return;
+        local ids = [];
+        foreach ( id, _flag in this._dirty )
+            ids.append( id );
+        foreach ( id in ids )
+            this._save( id );
+        this._dirty = {};
+        this._dirtyAt = 0.0;
     },
 
     function _touch( hPlayer ) {
@@ -376,17 +462,31 @@ local m = {
         return 0;
     },
 
-    function _addKill( hPlayer, track ) {
+    function _addAmount( hPlayer, track, delta ) {
         local touched = this._touch( hPlayer );
         if ( touched == null )
+            return null;
+        if ( track == null )
+            return null;
+        if ( delta == null )
+            return null;
+        try {
+            delta = delta.tointeger();
+        } catch ( e ) {
+            return null;
+        }
+        if ( delta < 1 )
             return null;
         local id = touched.id;
         local rec = touched.rec;
         local tid = track.id;
         local before = this._countOf( rec, tid );
-        local after = before + 1;
+        local after = before + delta;
         rec.tracks[tid] <- after;
-        this._save( id );
+        if ( this._kindOf( track ) == "heal" )
+            this._markDirty( id );
+        else
+            this._save( id );
         return { before = before, after = after, track = track };
     },
 
@@ -426,12 +526,16 @@ local m = {
         }
         if ( q in ::WkcWeaponIndex )
             return ::WkcTracks[::WkcWeaponIndex[q]];
+        if ( ( "WkcHealWeaponIndex" in getroottable() ) && ( q in ::WkcHealWeaponIndex ) )
+            return ::WkcTracks[::WkcHealWeaponIndex[q]];
 
         local full = q;
         if ( q.len() < 11 || q.slice( 0, 11 ) != "asw_weapon_" )
             full = "asw_weapon_" + q;
         if ( full in ::WkcWeaponIndex )
             return ::WkcTracks[::WkcWeaponIndex[full]];
+        if ( ( "WkcHealWeaponIndex" in getroottable() ) && ( full in ::WkcHealWeaponIndex ) )
+            return ::WkcTracks[::WkcHealWeaponIndex[full]];
 
         return null;
     },
@@ -461,8 +565,23 @@ local m = {
         local rec = touched.rec;
         local any = false;
         foreach ( track in ::WkcTracks ) {
+            if ( this._kindOf( track ) == "heal" )
+                continue;
             local c = this._countOf( rec, track.id );
-            local next = this._nextTier( c );
+            local next = this._nextTier( c, "kill" );
+            local label = this._labelOf( track, lang );
+            local line = this._t( hPlayer, "stats_line", { label = label, count = c } );
+            if ( next != null )
+                line += this._t( hPlayer, "stats_next", { next = next } );
+            this._msg( hPlayer, line );
+            any = true;
+        }
+        this._msgId( hPlayer, "stats_heal_hdr" );
+        foreach ( track in ::WkcTracks ) {
+            if ( this._kindOf( track ) != "heal" )
+                continue;
+            local c = this._countOf( rec, track.id );
+            local next = this._nextTier( c, "heal" );
             local label = this._labelOf( track, lang );
             local line = this._t( hPlayer, "stats_line", { label = label, count = c } );
             if ( next != null )
@@ -613,13 +732,25 @@ local m = {
         return n;
     },
 
-    function _writePopupStyle( e ) {
+    function _writePopupStyle( e, track ) {
         local v = this.variables;
         local accent = this._parseRgb( v.popup_accent, [ 80, 180, 255 ] );
         local text = this._parseRgb( v.popup_text, [ 255, 0, 0 ] );
         local bg = this._parseRgb( v.popup_bg, [ 8, 14, 28 ] );
+        local iconTint = [ accent[0], accent[1], accent[2] ];
+        local iconW = v.popup_icon_w.tofloat();
+        local iconH = v.popup_icon_h.tofloat();
 
-        // Int 3..5 accent RGB (полоска + tint иконки)
+        // Heal: квадратный крест 32×32, без cyan tint (иначе крест синеет),
+        // число белое — красное сливается с крестом. popup_icon_w/h убийств не трогаем.
+        if ( this._kindOf( track ) == "heal" ) {
+            iconW = this._HEAL_ICON_W;
+            iconH = this._HEAL_ICON_H;
+            iconTint = [ 255, 255, 255 ];
+            text = [ 255, 255, 255 ];
+        }
+
+        // Int 3..5 accent RGB (полоска)
         e.SetInt( 3, accent[0] );
         e.SetInt( 4, accent[1] );
         e.SetInt( 5, accent[2] );
@@ -634,13 +765,18 @@ local m = {
         e.SetInt( 12, this._clampByte( v.popup_bg_alpha, 225 ) );
         e.SetInt( 13, this._clampByte( v.popup_alpha, 230 ) );
         e.SetInt( 14, 1 );   // style marker: 1 = сервер записал цвета/layout
+        // Int 15..17 icon tint; Int 18 = записан
+        e.SetInt( 15, iconTint[0] );
+        e.SetInt( 16, iconTint[1] );
+        e.SetInt( 17, iconTint[2] );
+        e.SetInt( 18, 1 );
 
         // Float 2..7 layout @768p + scale multiplier
         e.SetFloat( 2, v.popup_x.tofloat() );
         e.SetFloat( 3, v.popup_y.tofloat() );
         e.SetFloat( 4, v.popup_stack_gap.tofloat() );
-        e.SetFloat( 5, v.popup_icon_w.tofloat() );
-        e.SetFloat( 6, v.popup_icon_h.tofloat() );
+        e.SetFloat( 5, iconW );
+        e.SetFloat( 6, iconH );
         e.SetFloat( 7, v.popup_scale.tofloat() );
         e.SetFloat( 8, v.popup_anim_time.tofloat() );
     },
@@ -692,7 +828,7 @@ local m = {
         e.SetInt( 2, stack );
         e.SetFloat( 0, showAt );
         e.SetFloat( 1, hideAt );
-        this._writePopupStyle( e );
+        this._writePopupStyle( e, track );
 
         if ( this._popups == null )
             this._popups = [];
@@ -752,7 +888,7 @@ local m = {
         if ( weapon == null || !weapon.IsValid() )
             return damage;
 
-        local track = this._trackByWeapon( weapon.GetClassname() );
+        local track = this._trackByWeapon( weapon.GetClassname(), "kill" );
         if ( track == null )
             return damage;
 
@@ -765,29 +901,93 @@ local m = {
         if ( hPlayer == null || !hPlayer.IsValid() )
             return damage;
 
-        local result = this._addKill( hPlayer, track );
+        local result = this._addAmount( hPlayer, track, 1 );
         if ( result == null )
             return damage;
 
-        local beforeTier = this._tierOf( result.before );
-        local afterTier = this._tierOf( result.after );
-        if ( afterTier > beforeTier ) {
-            // По умолчанию только popup; чат — если chat_notify=1 (язык убийцы)
-            if ( ( "variables" in this ) && this.variables.chat_notify != 0 ) {
-                local lang = this._langOf( hPlayer );
-                this._broadcast( this._t( hPlayer, "chat_tier", {
-                    name = hPlayer.GetPlayerName(),
-                    label = this._labelOf( result.track, lang ),
-                    tier = afterTier,
-                } ) );
-            }
-            ::McLog.Info( "[WK] tier " + result.track.id + " -> " + afterTier
-                + " (" + hPlayer.GetPlayerName() + ")" );
-
-            this._showPopup( attacker, result.track, afterTier, beforeTier );
-        }
-
+        this._onTierUp( hPlayer, attacker, result, "kill" );
         return damage;
+    },
+
+    function _onTierUp( hPlayer, hMarine, result, kind ) {
+        if ( result == null || hPlayer == null )
+            return;
+        local beforeTier = this._tierOf( result.before, kind );
+        local afterTier = this._tierOf( result.after, kind );
+        if ( afterTier <= beforeTier )
+            return;
+        if ( ( "variables" in this ) && this.variables.chat_notify != 0 ) {
+            local lang = this._langOf( hPlayer );
+            this._broadcast( this._t( hPlayer, "chat_tier", {
+                name = hPlayer.GetPlayerName(),
+                label = this._labelOf( result.track, lang ),
+                tier = afterTier,
+            } ) );
+        }
+        ::McLog.Info( "[WK] tier " + result.track.id + " -> " + afterTier
+            + " (" + hPlayer.GetPlayerName() + ")" );
+        this._showPopup( hMarine, result.track, afterTier, beforeTier );
+    },
+
+    function OnGameEvent_marine_healed( params ) {
+        if ( params == null )
+            return;
+
+        // amount — кредит strange/медали: очередь минус оставшийся FF.
+        // После «пилить бота → лечить» он часто 0. Считаем amount_healed
+        // (сколько реально поставили в очередь AddSlowHeal).
+        local amount = 0;
+        if ( ( "amount_healed" in params ) && params.amount_healed != null ) {
+            try {
+                amount = params.amount_healed.tointeger();
+            } catch ( e ) {
+            }
+        }
+        if ( amount <= 0 && ( "amount" in params ) && params.amount != null ) {
+            try {
+                amount = params.amount.tointeger();
+            } catch ( e ) {
+            }
+        }
+        if ( amount <= 0 )
+            return;
+
+        local weaponClass = "";
+        if ( ( "weapon_class" in params ) && params.weapon_class != null )
+            weaponClass = params.weapon_class.tostring();
+        if ( weaponClass.len() == 0 )
+            return;
+
+        local medicIdx = -1;
+        if ( ( "medic_entindex" in params ) && params.medic_entindex != null ) {
+            try {
+                medicIdx = params.medic_entindex.tointeger();
+            } catch ( e ) {
+                return;
+            }
+        }
+        if ( medicIdx < 0 )
+            return;
+
+        local hMedic = EntIndexToHScript( medicIdx );
+        if ( hMedic == null || !hMedic.IsValid() )
+            return;
+        if ( hMedic.GetClassname() != "asw_marine" )
+            return;
+
+        local track = this._trackByWeapon( weaponClass, "heal" );
+        if ( track == null )
+            return;
+
+        local hPlayer = hMedic.GetCommander();
+        if ( hPlayer == null || !hPlayer.IsValid() )
+            return;
+
+        local result = this._addAmount( hPlayer, track, amount );
+        if ( result == null )
+            return;
+
+        this._onTierUp( hPlayer, hMedic, result, "heal" );
     },
 
     function OnGameEvent_player_say( params ) {
@@ -833,6 +1033,8 @@ local m = {
 
     function Update() {
         this._flushPopups();
+        if ( this._dirtyAt > 0.0 && ( Time() - this._dirtyAt ) >= this._SAVE_FLUSH )
+            this._flushDirty();
     },
 
     function OnGameplayStart() {
@@ -841,10 +1043,12 @@ local m = {
     },
 
     function Cleanup() {
+        this._flushDirty();
         this._clearPopups();
     },
 
     function OnDisable() {
+        this._flushDirty();
         this._clearPopups();
         ::McLog.Info( "[MC] weapon_kills disabled (counting and !wkc paused)" );
     },
