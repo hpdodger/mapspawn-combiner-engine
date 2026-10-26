@@ -15,6 +15,8 @@ IncludeScript( "mapspawn_combiner/modules/tk_counter/announce" )
 const TK_DIR          = "tk_counter"
 const TK_INDEX_FILE   = "tk_counter/index.txt"
 const TK_TOP_N        = 10
+const TK_WARM_BATCH   = 8
+const TK_TOP_COOLDOWN = 10.0
 const TK_HUD_TALK     = 3
 const TK_TAG          = "[TKC] "
 const TK_CMD_PREFIX   = "!tkc"
@@ -48,6 +50,7 @@ const TK_MSG_NO_PERMISSION   = "no_permission"
 const TK_MSG_STEAM_UNAVAIL   = "steam_unavail"
 const TK_MSG_TOP_HEADER      = "top_header"
 const TK_MSG_TOP_EMPTY       = "top_empty"
+const TK_MSG_TOP_COLLECTING  = "top_collecting"
 const TK_MSG_HELP_TIP        = "help_tip"
 const TK_MSG_RANK_UP         = "rank_up"
 const TK_MSG_NEXT_PROGRESS   = "next_progress"
@@ -106,6 +109,10 @@ const TK_MSG_TEST_DONE       = "test_done"
     top_empty = {
         ru = "(пусто)",
         en = "(empty)",
+    },
+    top_collecting = {
+        ru = "Собираю таблицу…",
+        en = "Collecting the table…",
     },
     help_tip = {
         ru = "team kill counter справка - !tkc_help",
@@ -234,6 +241,16 @@ const TK_MSG_TEST_DONE       = "test_done"
 }
 
 ::g_TkCache <- {}
+::g_TkIndex <- []
+::g_TkIndexSet <- {}
+::g_TkIndexReady <- false
+::g_TkWarmCursor <- 0
+::g_TkWarmDone <- false
+::g_TkPendingTop <- []
+::g_TkTopCooldown <- {}
+::g_TkResetCursor <- -1
+::g_TkResetCount <- 0
+::g_TkPendingReset <- []
 PendingTips <- []
 // Steam keys already tipped this map (player_activate can fire more than once)
 TippedPlayers <- {}
@@ -543,16 +560,23 @@ TkIsAdmin <- function( hPlayer ) {
 // ── Persist ──────────────────────────────────────────────────────────────────
 
 TkLoadIndex <- function() {
+    if ( ::g_TkIndexReady )
+        return ::g_TkIndex
     local ids = []
     local raw = FileToString( TK_INDEX_FILE )
-    if ( raw == null || raw == "" )
-        return ids
-    foreach ( line in _TkSplitLines( raw ) ) {
-        if ( line.len() == 0 )
-            continue
-        ids.append( line )
+    if ( raw != null && raw != "" ) {
+        foreach ( line in _TkSplitLines( raw ) ) {
+            if ( line.len() == 0 )
+                continue
+            ids.append( line )
+        }
     }
-    return ids
+    ::g_TkIndex = ids
+    ::g_TkIndexSet = {}
+    foreach ( id in ids )
+        ::g_TkIndexSet[id] <- true
+    ::g_TkIndexReady = true
+    return ::g_TkIndex
 }
 
 TkSaveIndex <- function( ids ) {
@@ -563,13 +587,12 @@ TkSaveIndex <- function( ids ) {
 }
 
 TkEnsureInIndex <- function( id ) {
-    local ids = TkLoadIndex()
-    foreach ( existing in ids ) {
-        if ( existing == id )
-            return
-    }
-    ids.append( id )
-    TkSaveIndex( ids )
+    TkLoadIndex()
+    if ( id in ::g_TkIndexSet )
+        return
+    ::g_TkIndex.append( id )
+    ::g_TkIndexSet[id] <- true
+    TkSaveIndex( ::g_TkIndex )
 }
 
 TkParseNotify <- function( raw ) {
@@ -884,46 +907,206 @@ TkResetBySteamString <- function( steamStr ) {
     return { id = id, name = oldName, before = oldCount, steam = steam }
 }
 
-// Reset TK count for every known player (keeps name/lang/notify).
-TkResetAll <- function() {
-    local ids = TkLoadIndex()
-    local n = 0
-    foreach ( id in ids ) {
-        local rec = TkLoad( id )
-        rec.count = 0
-        ::g_TkCache[id] <- rec
-        TkSave( id )
-        n += 1
-    }
-    return n
+TkTopBusy <- function() {
+    return !::g_TkWarmDone || ::g_TkResetCursor >= 0
 }
 
-TkCollectAll <- function() {
-    local list = []
-    foreach ( id in TkLoadIndex() ) {
-        local rec = TkLoad( id )
+TkTopViewerKey <- function( hPlayer ) {
+    local id = TkKey( hPlayer )
+    if ( id != null )
+        return id
+    if ( hPlayer != null && hPlayer.IsValid() )
+        return "e" + hPlayer.entindex().tostring()
+    return null
+}
+
+TkTopOnCooldown <- function( key ) {
+    if ( key == null )
+        return false
+    if ( !( key in ::g_TkTopCooldown ) )
+        return false
+    return ::g_TkTopCooldown[key] > Time()
+}
+
+TkTopMarkCooldown <- function( key ) {
+    if ( key == null )
+        return
+    ::g_TkTopCooldown[key] <- Time() + TK_TOP_COOLDOWN
+}
+
+// Все записи из кэша, в топ попадают 10 с наибольшим счётом (в том числе кто влетел с 11-го).
+TkCollectTopN <- function() {
+    local top = []
+    foreach ( id in ::g_TkIndex ) {
+        if ( !( id in ::g_TkCache ) )
+            continue
+        local rec = ::g_TkCache[id]
         local steam = TkSteamStringFromAccountId( id.tointeger() )
         if ( "steam" in rec && rec.steam != null && rec.steam != "" )
             steam = rec.steam
-        list.append( {
+        local entry = {
             id = id,
             count = rec.count,
             name = rec.name,
             steam = steam,
             lang = TkNormalizeLang( rec.lang ),
-        } )
-    }
-    local n = list.len()
-    for ( local i = 0; i < n; i++ ) {
-        for ( local j = 0; j < n - 1 - i; j++ ) {
-            if ( list[j].count < list[j + 1].count ) {
-                local tmp = list[j]
-                list[j] = list[j + 1]
-                list[j + 1] = tmp
+        }
+        local n = top.len()
+        if ( n >= TK_TOP_N && entry.count <= top[n - 1].count )
+            continue
+        local pos = n
+        for ( local i = 0; i < n; i++ ) {
+            if ( entry.count > top[i].count ) {
+                pos = i
+                break
             }
         }
+        local next = []
+        for ( local i = 0; i < pos; i++ )
+            next.append( top[i] )
+        next.append( entry )
+        for ( local i = pos; i < n && next.len() < TK_TOP_N; i++ )
+            next.append( top[i] )
+        top = next
     }
-    return list
+    return top
+}
+
+TkPrintTop <- function( hPlayer ) {
+    if ( hPlayer == null || !hPlayer.IsValid() )
+        return
+    local lang = TkLangOf( hPlayer )
+    TkChat( hPlayer, lang, TK_MSG_TOP_HEADER )
+    local list = TkCollectTopN()
+    if ( list.len() == 0 ) {
+        TkChat( hPlayer, lang, TK_MSG_TOP_EMPTY )
+        return
+    }
+    for ( local i = 0; i < list.len(); i++ ) {
+        local e = list[i]
+        local line = ( i + 1 ).tostring() + ". " + TkFormatLine( e.name, e.count, lang )
+        ClientPrint( hPlayer, TK_HUD_TALK, TK_TAG + line )
+    }
+}
+
+TkPendingHasKey <- function( list, key ) {
+    foreach ( req in list ) {
+        if ( req.key == key )
+            return true
+    }
+    return false
+}
+
+TkFlushPendingTop <- function() {
+    if ( TkTopBusy() )
+        return
+    if ( ::g_TkPendingTop.len() == 0 )
+        return
+    local pending = ::g_TkPendingTop
+    ::g_TkPendingTop = []
+    foreach ( req in pending ) {
+        local h = req.hPlayer
+        if ( h == null || !h.IsValid() )
+            continue
+        if ( TkTopOnCooldown( req.key ) )
+            continue
+        TkPrintTop( h )
+        TkTopMarkCooldown( req.key )
+    }
+}
+
+TkRequestTop <- function( hPlayer ) {
+    if ( hPlayer == null || !hPlayer.IsValid() )
+        return
+    local key = TkTopViewerKey( hPlayer )
+    if ( key == null )
+        return
+    local lang = TkLangOf( hPlayer )
+    if ( TkTopBusy() ) {
+        if ( TkPendingHasKey( ::g_TkPendingTop, key ) )
+            return
+        TkChat( hPlayer, lang, TK_MSG_TOP_COLLECTING )
+        ::g_TkPendingTop.append( { hPlayer = hPlayer, key = key } )
+        return
+    }
+    if ( TkTopOnCooldown( key ) )
+        return
+    TkPrintTop( hPlayer )
+    TkTopMarkCooldown( key )
+}
+
+TkWarmTick <- function() {
+    if ( ::g_TkWarmDone )
+        return
+    TkLoadIndex()
+    local ids = ::g_TkIndex
+    local n = 0
+    while ( ::g_TkWarmCursor < ids.len() && n < TK_WARM_BATCH ) {
+        local id = ids[::g_TkWarmCursor]
+        ::g_TkWarmCursor += 1
+        if ( !( id in ::g_TkCache ) ) {
+            TkLoad( id )
+            n += 1
+        }
+    }
+    if ( ::g_TkWarmCursor >= ids.len() )
+        ::g_TkWarmDone = true
+}
+
+TkStartResetAll <- function( hPlayer ) {
+    if ( hPlayer == null || !hPlayer.IsValid() )
+        return
+    local key = TkTopViewerKey( hPlayer )
+    if ( key == null )
+        return
+    local lang = TkLangOf( hPlayer )
+    if ( TkPendingHasKey( ::g_TkPendingReset, key ) )
+        return
+    ::g_TkPendingReset.append( { hPlayer = hPlayer, key = key, lang = lang } )
+    if ( ::g_TkResetCursor >= 0 )
+        return
+    ::g_TkResetCursor = 0
+    ::g_TkResetCount = 0
+}
+
+TkResetTick <- function() {
+    if ( ::g_TkResetCursor < 0 )
+        return
+    TkLoadIndex()
+    local ids = ::g_TkIndex
+    local n = 0
+    while ( ::g_TkResetCursor < ids.len() && n < TK_WARM_BATCH ) {
+        local id = ids[::g_TkResetCursor]
+        ::g_TkResetCursor += 1
+        local rec = TkLoad( id )
+        rec.count = 0
+        ::g_TkCache[id] <- rec
+        TkSave( id )
+        ::g_TkResetCount += 1
+        n += 1
+    }
+    if ( ::g_TkResetCursor < ids.len() )
+        return
+    local count = ::g_TkResetCount
+    ::g_TkResetCursor = -1
+    ::g_TkWarmDone = true
+    ::g_TkWarmCursor = ids.len()
+    local pending = ::g_TkPendingReset
+    ::g_TkPendingReset = []
+    foreach ( req in pending ) {
+        local h = req.hPlayer
+        if ( h == null || !h.IsValid() )
+            continue
+        TkChat( h, req.lang, TK_MSG_RESET_ALL_DONE, { count = count } )
+    }
+}
+
+TkIoTick <- function() {
+    if ( ::g_TkResetCursor >= 0 )
+        TkResetTick()
+    else if ( !::g_TkWarmDone )
+        TkWarmTick()
+    TkFlushPendingTop()
 }
 
 // ── UI ───────────────────────────────────────────────────────────────────────
@@ -1181,21 +1364,7 @@ _OnPlayerSay <- function( params ) {
     }
 
     if ( cmd == TK_CMD_TOP ) {
-        local viewerLang = TkLangOf( hPlayer )
-        local list = TkCollectAll()
-        TkChat( hPlayer, viewerLang, TK_MSG_TOP_HEADER )
-        if ( list.len() == 0 ) {
-            TkChat( hPlayer, viewerLang, TK_MSG_TOP_EMPTY )
-            return
-        }
-        local limit = list.len()
-        if ( limit > TK_TOP_N )
-            limit = TK_TOP_N
-        for ( local i = 0; i < limit; i++ ) {
-            local e = list[i]
-            local line = ( i + 1 ).tostring() + ". " + TkFormatLine( e.name, e.count, viewerLang )
-            ClientPrint( hPlayer, TK_HUD_TALK, TK_TAG + line )
-        }
+        TkRequestTop( hPlayer )
         return
     }
 
@@ -1310,8 +1479,7 @@ _OnPlayerSay <- function( params ) {
         }
         local argLower = arg.tolower()
         if ( argLower == "all" ) {
-            local n = TkResetAll()
-            TkChat( hPlayer, lang, TK_MSG_RESET_ALL_DONE, { count = n } )
+            TkStartResetAll( hPlayer )
             return
         }
         local result = TkResetBySteamString( arg )

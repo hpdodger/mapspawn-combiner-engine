@@ -237,6 +237,7 @@ if ( "TkCounterLoaded" in getroottable() ) {
 
         function Update() {
             this._flushPopups();
+            this._scope.TkIoTick();
         },
 
         function OnGameplayStart() {
