@@ -7,10 +7,12 @@
 //
 // Слоты (сервер пишет из !am_set / variables, клиент читает):
 //   Entity 0 — asw_marine (якорь)
-//   String 0 — путь иконки (vgui/swarm/EquipIcons/…)
+//   String 0 — путь иконки, либо "путь\nник". Ник — над полоской, от левого края,
+//              цветом полоски. Без перевода строки строка целиком — путь (старый сервер).
+//   Ширина плашки — большая из двух: текст ника, либо отступ + иконка + конечное число + отступ.
 //   Int 0    — старт накрутки числа
 //   Int 1    — конец накрутки / порог тира
-//   Int 2    — индекс стека (дальше = левее)
+//   Int 2    — индекс стека. Отрицательный popup_x — дальше влево, положительный — дальше вправо.
 //   Int 3..5 — accent RGB (полоска)
 //   Int 6..8 — text RGB
 //   Int 9..11 — bg RGB
@@ -19,6 +21,8 @@
 //   Int 14   — 1 = сервер записал стиль (иначе fallback)
 //   Int 15..17 — icon tint RGB (heal: 255 255 255, без cyan)
 //   Int 18   — 1 = сервер записал icon tint (иначе tint = accent)
+//   Int 19   — entindex морпеха (0 = старый сервер, стек по фиксированному шагу)
+//   Int 20   — дорожка стека: 1 оружие, 2 тимкилл. Чужие плашки в расчёт не входят.
 //   Float 0  — Time() начала показа
 //   Float 1  — Time() конца
 //   Float 2  — popup_x @768p
@@ -81,6 +85,90 @@ function _spinValue( fromV, toV, t0, now, animSec ) {
     return v.tointeger();
 }
 
+// Общая таблица всех плашек на этом клиенте. Ключ: "морпех:дорожка:стек".
+function _layoutTable() {
+    local root = getroottable();
+    if ( !( "WkcPopupLayout" in root ) || root.WkcPopupLayout == null )
+        root.WkcPopupLayout <- {};
+    return root.WkcPopupLayout;
+}
+
+function _layoutKey( marineId, lane, stack ) {
+    return marineId.tostring() + ":" + lane.tostring() + ":" + stack.tostring();
+}
+
+function _layoutPublish( marineId, lane, stack, width ) {
+    if ( marineId <= 0 || lane <= 0 )
+        return;
+    local layout = _layoutTable();
+    local now = Time();
+    local drop = [];
+    foreach ( k, rec in layout ) {
+        if ( rec == null || !( "seen" in rec ) || ( now - rec.seen ) > 0.5 )
+            drop.append( k );
+    }
+    foreach ( k in drop )
+        delete layout[k];
+    layout[_layoutKey( marineId, lane, stack )] <- {
+        marine = marineId,
+        lane = lane,
+        stack = stack,
+        w = width,
+        seen = now,
+    };
+}
+
+// Сдвиг центра относительно первой плашки.
+// Не ближе stack * gapMin (старый шаг). Если плашки шире — отодвинуть, чтобы края не пересекались.
+function _stackShift( marineId, lane, stack, myW, gapMin, edge ) {
+    local layout = _layoutTable();
+    local now = Time();
+    local prev = [];
+    foreach ( rec in layout ) {
+        if ( rec == null || !( "seen" in rec ) )
+            continue;
+        if ( ( now - rec.seen ) > 0.5 )
+            continue;
+        if ( rec.marine != marineId || rec.lane != lane )
+            continue;
+        if ( rec.stack >= stack )
+            continue;
+        prev.append( { stack = rec.stack, w = rec.w } );
+    }
+    if ( prev.len() == 0 )
+        return stack * gapMin;
+
+    for ( local i = 1; i < prev.len(); i++ ) {
+        local item = prev[i];
+        local j = i - 1;
+        while ( j >= 0 && prev[j].stack > item.stack ) {
+            prev[j + 1] = prev[j];
+            j--;
+        }
+        prev[j + 1] = item;
+    }
+
+    local shift = prev[0].w * 0.5;
+    for ( local i = 1; i < prev.len(); i++ )
+        shift += edge + prev[i].w;
+    shift += edge + myW * 0.5;
+    local minDist = stack.tofloat() * gapMin;
+    if ( shift < minDist )
+        shift = minDist;
+    return shift;
+}
+
+// String 0: "иконка" или "иконка\nник".
+function _splitPayload( raw ) {
+    if ( raw == null )
+        return { icon = "", nick = "" };
+    local s = raw.tostring();
+    local nl = s.find( "\n" );
+    if ( nl == null )
+        return { icon = s, nick = "" };
+    return { icon = s.slice( 0, nl ), nick = s.slice( nl + 1 ) };
+}
+
 function Paint() {
     local hMarine = self.GetEntity( 0 );
     if ( hMarine == null || !hMarine.IsValid() )
@@ -106,7 +194,9 @@ function Paint() {
 
     _ensureFont();
 
-    local iconPath = self.GetString( 0 );
+    local packed = _splitPayload( self.GetString( 0 ) );
+    local iconPath = packed.icon;
+    local nick = packed.nick;
     local screenX = self.GetFloat( 2 );
     local screenY = self.GetFloat( 3 );
     local gapX = self.GetFloat( 4 );
@@ -159,10 +249,7 @@ function Paint() {
     local scale = ( ScreenHeight() / 768.0 ) * userScale;
     local iconW = iconW0 * scale;
     local iconH = iconH0 * scale;
-    local xOff = ( screenX * scale ) - ( stack * gapX * scale );
     local yOff = screenY * scale;
-
-    local cx = sp.x + xOff;
     local cy = sp.y + yOff;
 
     local alpha = maxA;
@@ -175,29 +262,50 @@ function Paint() {
     if ( alpha > 255 ) alpha = 255;
 
     local pad = 4.0 * scale;
-    local textGap = 6.0 * scale;
-    // Ширину панели считаем по конечному числу, чтобы не дёргалась при накрутке
-    local labelFinal = toV.tostring();
     local label = shown.tostring();
-    local textW = 0.0;
+    // Конечное число, не текущий кадр накрутки: иначе плашка меняет ширину всю анимацию.
+    local labelFinal = toV.tostring();
     local textH = 0.0;
+    local nickW = 0.0;
+    local numFinalW = 0.0;
     if ( FONT != null && FONT != -1 ) {
-        textW = self.GetTextWide( FONT, labelFinal ).tofloat();
         textH = self.GetFontTall( FONT ).tofloat();
+        numFinalW = self.GetTextWide( FONT, labelFinal ).tofloat();
+        if ( nick != "" )
+            nickW = self.GetTextWide( FONT, nick ).tofloat();
     }
 
     local tex = _textureFor( iconPath );
     local hasIcon = ( tex != null && tex != -1 && iconPath != null && iconPath != "" );
 
-    local contentW = textW;
+    local rowW = pad + numFinalW + pad;
     if ( hasIcon )
-        contentW = iconW + textGap + textW;
+        rowW = pad + iconW + numFinalW + pad;
+    local panelW = nickW;
+    if ( rowW > panelW )
+        panelW = rowW;
+
+    local marineId = self.GetInt( 19 );
+    local lane = self.GetInt( 20 );
+    local gapMin = gapX * scale;
+    local edge = 4.0 * scale;
+    _layoutPublish( marineId, lane, stack, panelW );
+    local shift = stack.tofloat() * gapMin;
+    if ( marineId > 0 && lane > 0 && stack > 0 )
+        shift = _stackShift( marineId, lane, stack, panelW, gapMin, edge );
+    // Оружие слева: шаг ещё левее. Тимкилл справа: шаг ещё правее.
+    local cx = sp.x + ( screenX * scale );
+    if ( screenX < 0.0 )
+        cx = cx - shift;
+    else
+        cx = cx + shift;
+
     local contentH = iconH;
     if ( textH > contentH )
         contentH = textH;
     if ( !hasIcon )
         contentH = textH;
-    local halfW = contentW * 0.5 + pad;
+    local halfW = panelW * 0.5;
     local halfH = contentH * 0.5 + pad;
 
     local panelA = ( bgA.tofloat() * ( alpha.tofloat() / 255.0 ) ).tointeger();
@@ -212,27 +320,47 @@ function Paint() {
         ar, ag, ab, ( alpha * 0.9 ).tointeger()
     );
 
-    local cursor = cx - halfW + pad;
+    local panelLeft = cx - halfW;
+    local panelRight = cx + halfW;
+    // Иконка своего размера. Слева и справа панели один и тот же отступ.
+    // Число — по центру промежутка между иконкой и правым отступом.
+    local iconX = panelLeft + pad;
     if ( hasIcon ) {
         local iconTop = cy - iconH * 0.5;
         self.PaintTexturedRectangle(
-            cursor, iconTop,
-            cursor + iconW, iconTop + iconH,
+            iconX, iconTop,
+            iconX + iconW, iconTop + iconH,
             ir, ig, ib, alpha,
             tex
         );
-        cursor += iconW + textGap;
     }
 
     if ( FONT != null && FONT != -1 ) {
+        local numLeft = panelLeft + pad;
+        if ( hasIcon )
+            numLeft = iconX + iconW;
+        local numRight = panelRight - pad;
+        local numSpace = numRight - numLeft;
         local ty = cy - textH * 0.5;
-        // Число рисуем в правой части слота конечной ширины (выравнивание вправо к краю текста)
         local twNow = self.GetTextWide( FONT, label ).tofloat();
-        local tx = cursor + ( textW - twNow );
+        local tx = numLeft;
+        if ( numSpace > twNow )
+            tx = numLeft + ( numSpace - twNow ) * 0.5;
         self.PaintText( tx - 1, ty,     0, 0, 0, alpha, FONT, label );
         self.PaintText( tx + 1, ty,     0, 0, 0, alpha, FONT, label );
         self.PaintText( tx,     ty - 1, 0, 0, 0, alpha, FONT, label );
         self.PaintText( tx,     ty + 1, 0, 0, 0, alpha, FONT, label );
         self.PaintText( tx, ty, tr, tg, tb, alpha, FONT, label );
+    }
+
+    // Ник над полоской, от левого края, целиком.
+    if ( nick != "" && FONT != null && FONT != -1 && textH > 0.0 ) {
+        local nx = panelLeft;
+        local ny = ( cy - halfH ) - textH - ( 2.0 * scale );
+        self.PaintText( nx - 1, ny,     0, 0, 0, alpha, FONT, nick );
+        self.PaintText( nx + 1, ny,     0, 0, 0, alpha, FONT, nick );
+        self.PaintText( nx,     ny - 1, 0, 0, 0, alpha, FONT, nick );
+        self.PaintText( nx,     ny + 1, 0, 0, 0, alpha, FONT, nick );
+        self.PaintText( nx, ny, ar, ag, ab, alpha, FONT, nick );
     }
 }

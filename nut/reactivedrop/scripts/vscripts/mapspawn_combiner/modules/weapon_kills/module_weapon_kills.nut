@@ -37,12 +37,12 @@ local _strings = {
         ru = "!wkc_reset — сбросить свои треки (admin)",
     },
     help_test = {
-        en = "!wkc_test <id|classname> — test popup icon (admin)",
-        ru = "!wkc_test <id|classname> — тестовый popup (admin)",
+        en = "!wkc_test <id|classname> [count] — test popup (admin, count 1-8)",
+        ru = "!wkc_test <id|classname> [count] — тестовый попап (admin, число 1-8)",
     },
     help_test_ex = {
-        en = "  e.g. !wkc_test rifle  /  !wkc_test beacon  /  !wkc_test heal_gun",
-        ru = "  напр. !wkc_test rifle  /  !wkc_test beacon  /  !wkc_test heal_gun",
+        en = "  e.g. !wkc_test rifle  /  !wkc_test rifle 4",
+        ru = "  напр. !wkc_test rifle  /  !wkc_test rifle 4",
     },
     help_toggle = {
         en = "toggle: !am_enable / !am_disable weapon_kills",
@@ -77,8 +77,8 @@ local _strings = {
         ru = "треки обнулены",
     },
     test_usage = {
-        en = "usage: !wkc_test <track_id|classname>",
-        ru = "использование: !wkc_test <track_id|classname>",
+        en = "usage: !wkc_test <track_id|classname> [1-8]",
+        ru = "использование: !wkc_test <track_id|classname> [1-8]",
     },
     unknown_track = {
         en = "unknown weapon/track: {arg}",
@@ -89,8 +89,8 @@ local _strings = {
         ru = "треки:",
     },
     test_ok = {
-        en = "test popup: {label} [{id}] {n}",
-        ru = "тест popup: {label} [{id}] {n}",
+        en = "test popup: {label} [{id}] {n} x{count}",
+        ru = "тест попапа: {label} [{id}] {n} x{count}",
     },
     stats_heal_hdr = {
         en = "healing:",
@@ -114,7 +114,7 @@ local m = {
     name        = "weapon_kills",
     enabled     = true,
     convars     = {},
-    version     = "0.5.1",
+    version     = "0.5.7",
     description = "Per-weapon kill tracks and medic heal tracks: count, save, !wkc, world popup.",
     requires_registry = 4,
 
@@ -628,21 +628,72 @@ local m = {
             this._listTrackIds( hPlayer );
             return;
         }
-        local track = this._findTrack( arg );
+        local parsed = this._splitTestArg( arg );
+        if ( parsed == null ) {
+            this._msgId( hPlayer, "test_usage" );
+            return;
+        }
+        local track = this._findTrack( parsed.query );
         if ( track == null ) {
-            this._msgId( hPlayer, "unknown_track", { arg = arg } );
+            this._msgId( hPlayer, "unknown_track", { arg = parsed.query } );
             this._listTrackIds( hPlayer );
             return;
         }
-        // Тест: накрутка 0 → 127 (цвет как у обычного popup — popup_text)
+        // Тест: накрутка 0 → 127. count штук подряд, стек сам раздвигает.
         local n = 127;
-        this._showPopup( hMarine, track, n, 0 );
+        for ( local i = 0; i < parsed.count; i++ )
+            this._showPopup( hMarine, track, n, 0 );
         local lang = this._langOf( hPlayer );
         this._msgId( hPlayer, "test_ok", {
             label = this._labelOf( track, lang ),
             id = track.id,
             n = n,
+            count = parsed.count,
         } );
+    },
+
+    // "rifle" → 1 попап. "rifle 4" → трек rifle и 4 попапа. Режем по первому пробелу.
+    function _splitTestArg( arg ) {
+        local s = arg.tostring();
+        local cut = -1;
+        for ( local i = 0; i < s.len(); i++ ) {
+            if ( s.slice( i, i + 1 ) == " " ) {
+                cut = i;
+                break;
+            }
+        }
+        if ( cut < 0 )
+            return { query = s, count = 1 };
+        local head = s.slice( 0, cut );
+        local tail = s.slice( cut + 1 );
+        while ( tail.len() > 0 && tail.slice( 0, 1 ) == " " )
+            tail = tail.slice( 1 );
+        if ( head.len() == 0 )
+            return null;
+        local count = this._parsePopupCount( tail );
+        if ( count == null )
+            return null;
+        return { query = head, count = count };
+    },
+
+    // Целое 1..8. Больше 8 режется до 8. Мусор → null.
+    function _parsePopupCount( raw ) {
+        if ( raw == null )
+            return null;
+        local s = raw.tostring();
+        if ( s.len() == 0 )
+            return null;
+        for ( local i = 0; i < s.len(); i++ ) {
+            local ch = s.slice( i, i + 1 );
+            if ( ch < "0" || ch > "9" )
+                return null;
+        }
+        local n = s.tointeger();
+        if ( n < 1 )
+            return null;
+        if ( n > 8 )
+            n = 8;
+        return n;
     },
 
     function _handleCommand( hPlayer, cmd, arg ) {
@@ -781,6 +832,44 @@ local m = {
         e.SetFloat( 8, v.popup_anim_time.tofloat() );
     },
 
+    // Ник командира. Переводы строк выкидываем: они отделяют ник от пути иконки.
+    function _commanderNick( hMarine ) {
+        if ( hMarine == null || !hMarine.IsValid() )
+            return "";
+        if ( !hMarine.IsInhabited() )
+            return "";
+        local hPlayer = hMarine.GetCommander();
+        if ( hPlayer == null || !hPlayer.IsValid() )
+            return "";
+        local name = hPlayer.GetPlayerName();
+        if ( name == null )
+            return "";
+        name = name.tostring();
+        local out = "";
+        for ( local i = 0; i < name.len(); i++ ) {
+            local ch = name.slice( i, i + 1 );
+            if ( ch != "\n" && ch != "\r" )
+                out += ch;
+        }
+        return out;
+    },
+
+    // Одна сетевая строка: путь иконки, затем перевод строки и ник. Лимит 255 байт.
+    function _popupPayload( icon, hMarine ) {
+        local path = "";
+        if ( icon != null )
+            path = icon.tostring();
+        local nick = this._commanderNick( hMarine );
+        if ( nick == "" )
+            return path;
+        local room = 255 - path.len() - 1;
+        if ( room < 1 )
+            return path;
+        if ( nick.len() > room )
+            nick = nick.slice( 0, room );
+        return path + "\n" + nick;
+    },
+
     // track — ::WkcTracks; threshold — конечное число; animFrom — старт накрутки (обычно прошлый тир).
     function _showPopup( hMarine, track, threshold, animFrom ) {
         if ( hMarine == null || !hMarine.IsValid() )
@@ -822,10 +911,12 @@ local m = {
         e.Spawn();
         e.Activate();
         e.SetEntity( 0, hMarine );
-        e.SetString( 0, icon );   // путь EquipIcon — клиент без своей таблицы треков
+        e.SetString( 0, this._popupPayload( icon, hMarine ) );
         e.SetInt( 0, animFrom );  // старт накрутки
         e.SetInt( 1, threshold ); // конец накрутки / порог
         e.SetInt( 2, stack );
+        e.SetInt( 19, hMarine.entindex() );
+        e.SetInt( 20, 1 );   // дорожка стека: оружие
         e.SetFloat( 0, showAt );
         e.SetFloat( 1, hideAt );
         this._writePopupStyle( e, track );
@@ -1069,7 +1160,7 @@ m._rebuildWeaponIndex();
     // Layout @768p (negative X = left of head, negative Y = above head)
     [ "popup_x", -120.0, "Popup X offset px @768p (more negative = further left of strange)", { min = -400, max = 200, step = 4 } ],
     [ "popup_y", -20.0, "Popup Y offset px @768p (negative = above head)", { min = -200, max = 200, step = 2 } ],
-    [ "popup_stack_gap", 72.0, "Horizontal gap between stacked popups (px @768p)", { min = 20, max = 200, step = 4 } ],
+    [ "popup_stack_gap", 72.0, "Minimum distance between stacked popup centers (px @768p). Wider panels spread further.", { min = 20, max = 400, step = 4 } ],
     [ "popup_icon_w", 56.0, "EquipIcon width px @768p (stock icons are 2:1)", { min = 16, max = 128, step = 2 } ],
     [ "popup_icon_h", 28.0, "EquipIcon height px @768p", { min = 8, max = 64, step = 2 } ],
     [ "popup_scale", 1.0, "Popup scale multiplier (1.0 = default; affects icon, offsets, gaps)", { min = 0.4, max = 3.0, step = 0.1 } ],

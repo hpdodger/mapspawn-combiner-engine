@@ -142,6 +142,44 @@ if ( "TkCounterLoaded" in getroottable() ) {
             e.SetFloat( 8, v.popup_anim_time.tofloat() );
         },
 
+        // Ник командира. Переводы строк выкидываем: они отделяют ник от пути иконки.
+        function _commanderNick( hMarine ) {
+            if ( hMarine == null || !hMarine.IsValid() )
+                return "";
+            if ( !hMarine.IsInhabited() )
+                return "";
+            local hPlayer = hMarine.GetCommander();
+            if ( hPlayer == null || !hPlayer.IsValid() )
+                return "";
+            local name = hPlayer.GetPlayerName();
+            if ( name == null )
+                return "";
+            name = name.tostring();
+            local out = "";
+            for ( local i = 0; i < name.len(); i++ ) {
+                local ch = name.slice( i, i + 1 );
+                if ( ch != "\n" && ch != "\r" )
+                    out += ch;
+            }
+            return out;
+        },
+
+        // Одна сетевая строка: путь иконки, затем перевод строки и ник. Лимит 255 байт.
+        function _popupPayload( icon, hMarine ) {
+            local path = "";
+            if ( icon != null )
+                path = icon.tostring();
+            local nick = this._commanderNick( hMarine );
+            if ( nick == "" )
+                return path;
+            local room = 255 - path.len() - 1;
+            if ( room < 1 )
+                return path;
+            if ( nick.len() > room )
+                nick = nick.slice( 0, room );
+            return path + "\n" + nick;
+        },
+
         // animFrom — старт накрутки, count — конечное число на попапе.
         function _showPopup( hMarine, animFrom, count ) {
             if ( hMarine == null || !hMarine.IsValid() )
@@ -187,10 +225,12 @@ if ( "TkCounterLoaded" in getroottable() ) {
             e.Spawn();
             e.Activate();
             e.SetEntity( 0, hMarine );
-            e.SetString( 0, icon );
+            e.SetString( 0, this._popupPayload( icon, hMarine ) );
             e.SetInt( 0, animFrom );
             e.SetInt( 1, count );
             e.SetInt( 2, stack );
+            e.SetInt( 19, hMarine.entindex() );
+            e.SetInt( 20, 2 );   // дорожка стека: тимкилл
             e.SetFloat( 0, showAt );
             e.SetFloat( 1, hideAt );
             this._writePopupStyle( e );
@@ -267,7 +307,7 @@ if ( "TkCounterLoaded" in getroottable() ) {
         [ "popup_anim_time", 0.4, "Seconds to spin the number (0 = instant)", { min = 0, max = 3, step = 0.05 } ],
         [ "popup_x", 120.0, "Popup X offset px @768p (positive = right of the head)", { min = -400, max = 400, step = 4 } ],
         [ "popup_y", -20.0, "Popup Y offset px @768p (negative = above head)", { min = -200, max = 200, step = 2 } ],
-        [ "popup_stack_gap", 72.0, "Horizontal gap between stacked popups (px @768p)", { min = 20, max = 200, step = 4 } ],
+        [ "popup_stack_gap", 72.0, "Minimum distance between stacked popup centers (px @768p). Wider panels spread further.", { min = 20, max = 400, step = 4 } ],
         [ "popup_icon_w", 32.0, "DeadIcon width px @768p (square)", { min = 12, max = 96, step = 2 } ],
         [ "popup_icon_h", 32.0, "DeadIcon height px @768p (square)", { min = 12, max = 96, step = 2 } ],
         [ "popup_scale", 1.0, "Popup scale multiplier (icon, offsets, gap)", { min = 0.4, max = 3.0, step = 0.1 } ],

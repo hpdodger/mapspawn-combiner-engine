@@ -82,6 +82,7 @@ const TK_MSG_TEST_NO_MARINE  = "test_no_marine"
 const TK_MSG_TEST_OFF        = "test_off"
 const TK_MSG_TEST_FAIL       = "test_fail"
 const TK_MSG_TEST_DONE       = "test_done"
+const TK_MSG_TEST_USAGE      = "test_usage"
 
 ::g_TkLangAliases <- {
     ru = "ru",
@@ -199,8 +200,8 @@ const TK_MSG_TEST_DONE       = "test_done"
         en = "!tkc_off — hide rank-up chat and red center text",
     },
     help_test = {
-        ru = "!tkc_test — тестовый попап над морпехом (админ)",
-        en = "!tkc_test — test popup over your marine (admin)",
+        ru = "!tkc_test [1-8] — тестовый попап над морпехом (админ)",
+        en = "!tkc_test [1-8] — test popup over your marine (admin)",
     },
     test_no_marine = {
         ru = "Нет морпеха для попапа.",
@@ -215,8 +216,12 @@ const TK_MSG_TEST_DONE       = "test_done"
         en = "Could not show the popup.",
     },
     test_done = {
-        ru = "Тест попапа: {n}",
-        en = "Popup test: {n}",
+        ru = "Тест попапа: {n} x{count}",
+        en = "Popup test: {n} x{count}",
+    },
+    test_usage = {
+        ru = "использование: !tkc_test [1-8]",
+        en = "usage: !tkc_test [1-8]",
     },
     help_reset = {
         ru = "!tkc_reset STEAM_…|all — сброс игрока / всей статистики (админ)",
@@ -475,6 +480,26 @@ _TkTrimSpaces <- function( s ) {
     while ( s.len() > 0 && s.slice( s.len() - 1 ) == " " )
         s = s.slice( 0, s.len() - 1 )
     return s
+}
+
+// Целое 1..8. Больше 8 режется до 8. Мусор или пустая строка → null.
+_TkParsePopupCount <- function( raw ) {
+    if ( raw == null )
+        return null
+    local s = _TkTrimSpaces( raw )
+    if ( s.len() == 0 )
+        return null
+    for ( local i = 0; i < s.len(); i++ ) {
+        local ch = s.slice( i, i + 1 )
+        if ( ch < "0" || ch > "9" )
+            return null
+    }
+    local n = s.tointeger()
+    if ( n < 1 )
+        return null
+    if ( n > 8 )
+        n = 8
+    return n
 }
 
 _TkSplitColons <- function( s ) {
@@ -1452,6 +1477,14 @@ _OnPlayerSay <- function( params ) {
             TkChat( hPlayer, lang, TK_MSG_TEST_NO_MARINE )
             return
         }
+        local count = 1
+        if ( arg != "" ) {
+            count = _TkParsePopupCount( arg )
+            if ( count == null ) {
+                TkChat( hPlayer, lang, TK_MSG_TEST_USAGE )
+                return
+            }
+        }
         local rec = TkTouchPlayer( hPlayer )
         local n = 1
         local fromN = 0
@@ -1460,11 +1493,21 @@ _OnPlayerSay <- function( params ) {
             fromN = n - 1
         }
         local mod = TkPopupModule()
-        if ( mod == null || !mod._showPopup( marine, fromN, n ) ) {
+        if ( mod == null ) {
             TkChat( hPlayer, lang, TK_MSG_TEST_FAIL )
             return
         }
-        TkChat( hPlayer, lang, TK_MSG_TEST_DONE, { n = n } )
+        local shown = 0
+        for ( local i = 0; i < count; i++ ) {
+            if ( !mod._showPopup( marine, fromN, n ) )
+                break
+            shown++
+        }
+        if ( shown < 1 ) {
+            TkChat( hPlayer, lang, TK_MSG_TEST_FAIL )
+            return
+        }
+        TkChat( hPlayer, lang, TK_MSG_TEST_DONE, { n = n, count = shown } )
         return
     }
 
