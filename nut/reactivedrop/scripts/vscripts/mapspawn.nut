@@ -24,6 +24,7 @@ IncludeScript( "mapspawn_combiner/modules/lang/module_lang" );
 IncludeScript( "mapspawn_combiner/modules/tk_counter/module_tk_counter" );
 IncludeScript( "mapspawn_combiner/modules/laser_pointer/module_laser_pointer" );
 IncludeScript( "mapspawn_combiner/modules/weapon_kills/module_weapon_kills" );
+IncludeScript( "mapspawn_combiner/modules/achievements/module_achievements" );
 IncludeScript( "mapspawn_combiner/modules/assburn/module_assburn" );
 IncludeScript( "mapspawn_combiner/modules/grubrain/module_grubrain" );
 IncludeScript( "mapspawn_combiner/modules/legacy_chat/module_legacy_chat" );
