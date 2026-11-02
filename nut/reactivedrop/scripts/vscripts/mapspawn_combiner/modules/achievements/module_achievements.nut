@@ -2,7 +2,7 @@
 // Кастомные ачивки (не Steam): сейв на аккаунт, !ach, попап справа ниже TK.
 // Правила — modules/achievements/defs/*.nut через IncludeScript / AchRegister.
 // HUD: тот же weapon_kills/wkc_popup_hud.nut (Int 21 = 1, дорожка 3).
-// Чат: !ach / !ach_help / !ach_test / !ach_reset (test и reset — McAuth).
+// Чат: !ach / !ach_help / !ach_test / !ach_reset / !ach_viewall (test, reset, viewall — McAuth).
 
 if ( "AchievementsLoaded" in getroottable() ) {
     ::McLog.Info( "[MC] achievements: already loaded, skip" );
@@ -56,6 +56,10 @@ local _strings = {
     help_reset = {
         en = "!ach_reset [steamid|all] — wipe save (admin)",
         ru = "!ach_reset [steamid|all] — сбросить сейв (admin)",
+    },
+    help_viewall = {
+        en = "!ach_viewall — players and their unlocks (admin)",
+        ru = "!ach_viewall — игроки и их открытия (admin)",
     },
     help_toggle = {
         en = "toggle: !am_enable / !am_disable achievements",
@@ -129,13 +133,21 @@ local _strings = {
         en = "★ {title}",
         ru = "★ {title}",
     },
+    view_row = {
+        en = "{name} [{key}]: {list}",
+        ru = "{name} [{key}]: {list}",
+    },
+    view_row_nosteam = {
+        en = "{name}: SteamID unavailable",
+        ru = "{name}: SteamID недоступен",
+    },
 };
 
 local m = {
     name        = "achievements",
     enabled     = true,
     convars     = {},
-    version     = "0.1.3",
+    version     = "0.1.6",
     description = "Custom (non-Steam) achievements: save, !ach, world popup below teamkill.",
     requires_registry = 4,
 
@@ -145,7 +157,7 @@ local m = {
         "Defs: modules/achievements/defs/*.nut via AchRegister.",
         "Popup: nick above stripe, icon + title (1-2 lines) below. Lane 3, right of head, below TK.",
         "Client Paint: weapon_kills/wkc_popup_hud.nut (stub challenge weapon_kills).",
-        "Chat: !ach / !ach_help / !ach_test <id> (admin) / !ach_reset (admin)",
+        "Chat: !ach / !ach_help / !ach_test <id> (admin) / !ach_reset (admin) / !ach_viewall (admin)",
         "Language: !mc_lang en|ru (shared McI18n, default en)",
         "Tunables: !am_vars achievements",
     ],
@@ -166,6 +178,7 @@ local m = {
     _cache        = null,
     _popups       = null,
     _killTimes    = null,
+    _spree        = null,
     _paraHeart    = null,
     _heartMarine  = null,
     _pendingHeart = null,
@@ -608,6 +621,39 @@ local m = {
         return n;
     },
 
+    // Пауза серии как у голоса monster kill в обычной игре (MarineKilled).
+    function _spreeLimit() {
+        local limit = 3.0;
+        try {
+            if ( "Convars" in getroottable() )
+                limit = Convars.GetFloat( "rd_killingspree_time_limit" ).tofloat();
+        } catch ( e ) {
+            limit = 3.0;
+        }
+        if ( limit == null || limit <= 0.0 )
+            limit = 3.0;
+        return limit;
+    },
+
+    // Длина серии на игрока. Первое убийство после паузы — 1, каждое
+    // следующее ближе лимита к предыдущему добавляет 1. Жертва сюда не входит:
+    // считает вызывающий код.
+    function _noteMarineSpree( key ) {
+        if ( key == null )
+            return 0;
+        local now = Time();
+        if ( this._spree == null )
+            this._spree = {};
+        local n = 1;
+        if ( key in this._spree ) {
+            local prev = this._spree[key];
+            if ( now - prev.t < this._spreeLimit() )
+                n = prev.n + 1;
+        }
+        this._spree[key] <- { t = now, n = n };
+        return n;
+    },
+
     function _isParasite( ent ) {
         if ( ent == null || !ent.IsValid() )
             return false;
@@ -931,6 +977,11 @@ local m = {
         local life = this.variables.popup_lifetime.tofloat();
         if ( life < 0.5 )
             life = 0.5;
+        try {
+            if ( hMarine.GetHealth() <= 0 )
+                delay = 0.0;
+        } catch ( e ) {
+        }
 
         local icon = "";
         if ( ( "icon" in def ) && def.icon != null )
@@ -938,7 +989,11 @@ local m = {
 
         local lang = this._langOf( hPlayer );
         local title = this._titleOf( def, lang );
-        local nick = this._commanderNick( hMarine );
+        local nick = "";
+        if ( hPlayer != null && hPlayer.IsValid() )
+            nick = this._stripNl( hPlayer.GetPlayerName() );
+        if ( nick == "" )
+            nick = this._commanderNick( hMarine );
 
         local now = Time();
         local showAt = now + delay;
@@ -1017,6 +1072,7 @@ local m = {
         this._msgId( hPlayer, "help_help" );
         this._msgId( hPlayer, "help_test" );
         this._msgId( hPlayer, "help_reset" );
+        this._msgId( hPlayer, "help_viewall" );
         this._msgId( hPlayer, "help_toggle" );
         this._msgId( hPlayer, "help_hud" );
         this._msgId( hPlayer, "help_lang" );
@@ -1143,6 +1199,65 @@ local m = {
         this._msgId( hPlayer, "wiped", { key = key } );
     },
 
+    function _formatUnlockList( rec, lang ) {
+        local s = "";
+        local first = true;
+        foreach ( def in ::g_AchDefs ) {
+            if ( rec == null || !( def.id in rec.unlocked ) )
+                continue;
+            if ( !first )
+                s += ", ";
+            first = false;
+            s += this._titleOf( def, lang );
+        }
+        return s;
+    },
+
+    function _printViewRow( hPlayer, lang, name, key, rec ) {
+        local list = this._formatUnlockList( rec, lang );
+        if ( list == "" )
+            list = this._t( hPlayer, "none" );
+        this._msgId( hPlayer, "view_row", {
+            name = name,
+            key = key,
+            list = list,
+        } );
+    },
+
+    function _viewAll( hPlayer ) {
+        if ( !this._isAdmin( hPlayer ) ) {
+            this._msgId( hPlayer, "no_perm" );
+            return;
+        }
+        local lang = this._langOf( hPlayer );
+        local seen = {};
+        local p = null;
+        while ( ( p = Entities.FindByClassname( p, "player" ) ) != null ) {
+            if ( !p.IsValid() )
+                continue;
+            local name = this._stripNl( p.GetPlayerName() );
+            if ( name == "" )
+                name = "?";
+            local key = this._playerKey( p );
+            if ( key == null ) {
+                this._msgId( hPlayer, "view_row_nosteam", { name = name } );
+                continue;
+            }
+            seen[key] <- true;
+            this._touch( p );
+            this._printViewRow( hPlayer, lang, name, key, this._load( key ) );
+        }
+        foreach ( id in this._loadIndex() ) {
+            if ( id in seen )
+                continue;
+            local rec = this._load( id );
+            local name = "?";
+            if ( rec != null && rec.name != null && rec.name != "" )
+                name = this._stripNl( rec.name );
+            this._printViewRow( hPlayer, lang, name, id, rec );
+        }
+    },
+
     function _handleCommand( hPlayer, cmd, arg ) {
         if ( cmd == "!ach" ) {
             this._printList( hPlayer );
@@ -1158,6 +1273,10 @@ local m = {
         }
         if ( cmd == "!ach_reset" ) {
             this._resetCmd( hPlayer, arg );
+            return;
+        }
+        if ( cmd == "!ach_viewall" ) {
+            this._viewAll( hPlayer );
             return;
         }
         this._printHelp( hPlayer );
@@ -1199,6 +1318,28 @@ local m = {
             attacker = this._asMarine( EntIndexToHScript( params["entindex_inflictor"] ) );
         if ( attacker == null )
             return;
+
+        // Серия bloodbath: любой морпех, бот и своя смерть тоже.
+        // OnMarineKilled ниже по-прежнему только для двух живых игроков.
+        if ( victim.GetClassname() == "asw_marine" ) {
+            local hSpreeKiller = this._commanderOfMarine( attacker );
+            if ( hSpreeKiller != null ) {
+                local spreeKey = this._playerKey( hSpreeKiller );
+                if ( spreeKey != null ) {
+                    this._touch( hSpreeKiller );
+                    local length = this._noteMarineSpree( spreeKey );
+                    local spreeCtx = this._makeCtx( spreeKey, hSpreeKiller, attacker );
+                    foreach ( def in ::g_AchDefs ) {
+                        if ( this._isUnlocked( spreeKey, def.id ) )
+                            continue;
+                        if ( !( "OnMarineSpree" in def ) )
+                            continue;
+                        def.OnMarineSpree( spreeCtx, length );
+                    }
+                }
+            }
+        }
+
         if ( attacker == victim )
             return;
 
@@ -1320,18 +1461,21 @@ local m = {
     function OnGameplayStart() {
         this._clearPopups();
         this._killTimes = null;
+        this._spree = null;
         this._clearHeartState();
     },
 
     function Cleanup() {
         this._clearPopups();
         this._killTimes = null;
+        this._spree = null;
         this._clearHeartState();
     },
 
     function OnDisable() {
         this._clearPopups();
         this._killTimes = null;
+        this._spree = null;
         this._clearHeartState();
         ::McLog.Info( "[MC] achievements disabled" );
     },

@@ -335,10 +335,6 @@ function _paintAchievement( sp, stack, iconPath, nick, title, screenX, gapX, ico
 }
 
 function Paint() {
-    local hMarine = self.GetEntity( 0 );
-    if ( hMarine == null || !hMarine.IsValid() )
-        return;
-
     local now = Time();
     local t0 = self.GetFloat( 0 );
     local t1 = self.GetFloat( 1 );
@@ -359,7 +355,16 @@ function Paint() {
     if ( fromV < 0 )
         fromV = 0;
 
-    local sp = self.ClientGetEntityScreenPos( hMarine, true );
+    local hMarine = self.GetEntity( 0 );
+    local sp = null;
+    if ( hMarine != null && hMarine.IsValid() ) {
+        sp = self.ClientGetEntityScreenPos( hMarine, true );
+        if ( !sp )
+            sp = self.ClientGetEntityScreenPos( hMarine, false );
+    }
+    // Труп / ragdoll часто вне экрана для emote-якоря. Ачивка всё равно должна быть видна.
+    if ( !sp && achMode )
+        sp = { x = ScreenWidth() * 0.5, y = ScreenHeight() * 0.22 };
     if ( !sp )
         return;
 

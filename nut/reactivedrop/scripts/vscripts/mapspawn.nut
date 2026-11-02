@@ -28,6 +28,7 @@ IncludeScript( "mapspawn_combiner/modules/achievements/module_achievements" );
 IncludeScript( "mapspawn_combiner/modules/assburn/module_assburn" );
 IncludeScript( "mapspawn_combiner/modules/grubrain/module_grubrain" );
 IncludeScript( "mapspawn_combiner/modules/legacy_chat/module_legacy_chat" );
+IncludeScript( "mapspawn_combiner/modules/detailed_death_message/module_detailed_death_message" );
 
 // Файл настроек сервера (тихие флаги enabled — без OnEnable/OnDisable).
 local _mcAdmin = ::McRegistry.FindModule( "admin" );

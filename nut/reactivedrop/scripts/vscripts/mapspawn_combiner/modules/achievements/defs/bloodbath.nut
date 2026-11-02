@@ -1,4 +1,5 @@
-// Четыре inhabited-игрока за короткий залп (граната, взрыв и т.п.).
+// Серия как у голоса monster kill в обычной игре: 4-е убийство морпеха.
+// Пауза — rd_killingspree_time_limit. Длину считает модуль (OnMarineSpree).
 
 AchRegister( {
     id    = "bloodbath",
@@ -7,12 +8,12 @@ AchRegister( {
         en = "Bloodbath",
     },
     desc  = {
-        ru = "Убей четырёх игроков одним залпом.",
-        en = "Kill four players in one burst.",
+        ru = "Убей четырёх морпехов одной серией.",
+        en = "Kill four marines in one streak.",
     },
     icon  = "vgui/achievements/bloodbath",
-    OnMarineKilled = function( ctx, killer, victim, kKey, vKey ) {
-        if ( ctx.RecentMarineKills( 2.0 ) >= 4 )
+    OnMarineSpree = function( ctx, length ) {
+        if ( length >= 4 )
             ctx.Unlock( "bloodbath" );
     },
 } );
