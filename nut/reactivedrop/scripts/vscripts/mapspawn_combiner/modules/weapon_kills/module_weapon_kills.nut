@@ -56,6 +56,10 @@ local _strings = {
         en = "language: !mc_lang en|ru (shared)",
         ru = "язык: !mc_lang en|ru (общий)",
     },
+    help_popups = {
+        en = "popups on your screen: !mc_popups on|off",
+        ru = "попапы на своём экране: !mc_popups on|off",
+    },
     steam = {
         en = "SteamID unavailable (LAN/BOT?)",
         ru = "SteamID недоступен (LAN/BOT?)",
@@ -114,7 +118,7 @@ local m = {
     name        = "weapon_kills",
     enabled     = true,
     convars     = {},
-    version     = "0.5.7",
+    version     = "0.5.8",
     description = "Per-weapon kill tracks and medic heal tracks: count, save, !wkc, world popup.",
     requires_registry = 4,
 
@@ -125,6 +129,7 @@ local m = {
         "Client Paint needs challenge stub weapon_kills (required_on_client) on the client.",
         "Chat: !wkc / !wkc_help / !wkc_reset (admin) / !wkc_test (admin, force popup)",
         "Language: !mc_lang en|ru (shared McI18n, default en)",
+        "Hide world popups on your screen: !mc_popups off  (on to show again)",
         "Tunables: !am_vars weapon_kills",
         "Colors are RGB strings, e.g. !am_set weapon_kills popup_accent \"80 180 255\"",
         "Position (px @768p): popup_x (left of head), popup_y (above head = negative)",
@@ -506,6 +511,7 @@ local m = {
         this._msgId( hPlayer, "help_toggle" );
         this._msgId( hPlayer, "help_hud" );
         this._msgId( hPlayer, "help_lang" );
+        this._msgId( hPlayer, "help_popups" );
     },
 
     // query: track id ("rifle") или classname ("asw_weapon_rifle" / "rifle" после asw_weapon_).
@@ -917,6 +923,8 @@ local m = {
         e.SetInt( 2, stack );
         e.SetInt( 19, hMarine.entindex() );
         e.SetInt( 20, 1 );   // дорожка стека: оружие
+        if ( "McHud" in getroottable() )
+            ::McHud.ApplyMask( e );
         e.SetFloat( 0, showAt );
         e.SetFloat( 1, hideAt );
         this._writePopupStyle( e, track );

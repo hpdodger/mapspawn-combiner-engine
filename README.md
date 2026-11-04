@@ -22,12 +22,14 @@ nut/reactivedrop/
       game_events.nut            — ::McGameEvents (OnGameEvent_*)
       thinker_hooks.nut          — ::McThinkers (OnGameplayStart, Update, урон…)
       admins.nut                 — ::McAuth (SteamID)
+      i18n.nut                   — ::McI18n (язык игрока)
+      hud.nut                    — ::McHud (попапы на своём экране)
       modules/
         <имя>/module_<имя>.nut   — вход модуля
 ```
 
 Ядро (движок) — файлы в `mapspawn_combiner/` вне `modules/`: реестр, события,
-thinker, авторизация, лог. Каждый модуль живёт целиком в своей папке
+thinker, авторизация, язык, попапы на экране, лог. Каждый модуль живёт целиком в своей папке
 `modules/<имя>/`. Вход — `module_<имя>.nut`: таблица, хуки, `McRegistry.Register`.
 
 Администрирование во время игры — модуль `admin`. Он оформлен как остальные
@@ -59,6 +61,8 @@ thinker, авторизация, лог. Каждый модуль живёт ц
 | `McGameEvents` | список имён + `BindDispatchers()` |
 | `McThinkers` | Update-thinker + служебные хуки |
 | `McAuth` | список SteamID (`IsAdmin`, `PlayerKey`…) |
+| `McI18n` | язык игрока (`LangOf` / `SetLang`, `!mc_lang`) |
+| `McHud` | попапы на своём экране (`Hidden` / `SetHidden`, `!mc_popups`) |
 | `McLog` | цветной лог загрузки: Info / Warn / Err |
 
 Тег в логе: `[MC]`. Глобальный `enum HudPrint` остаётся общим.

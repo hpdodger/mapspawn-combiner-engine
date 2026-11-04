@@ -1,7 +1,7 @@
 // mapspawn_combiner/modules/achievements/module_achievements.nut
 // Кастомные ачивки (не Steam): сейв на аккаунт, !ach, попап справа ниже TK.
 // Правила — modules/achievements/defs/*.nut через IncludeScript / AchRegister.
-// HUD: тот же weapon_kills/wkc_popup_hud.nut (Int 21 = 1, дорожка 3).
+// HUD: weapon_kills/wkc_ach_hud.nut (копия Paint, отдельное имя от TK, Int 21 = 1, дорожка 3).
 // Чат: !ach / !ach_help / !ach_test / !ach_reset / !ach_viewall (test, reset, viewall — McAuth).
 
 if ( "AchievementsLoaded" in getroottable() ) {
@@ -147,7 +147,7 @@ local m = {
     name        = "achievements",
     enabled     = true,
     convars     = {},
-    version     = "0.1.6",
+    version     = "0.1.9",
     description = "Custom (non-Steam) achievements: save, !ach, world popup below teamkill.",
     requires_registry = 4,
 
@@ -156,7 +156,7 @@ local m = {
         "Custom VScript achievements. Not Steam UserStats.",
         "Defs: modules/achievements/defs/*.nut via AchRegister.",
         "Popup: nick above stripe, icon + title (1-2 lines) below. Lane 3, right of head, below TK.",
-        "Client Paint: weapon_kills/wkc_popup_hud.nut (stub challenge weapon_kills).",
+        "Client Paint: weapon_kills/wkc_ach_hud.nut (stub challenge weapon_kills).",
         "Chat: !ach / !ach_help / !ach_test <id> (admin) / !ach_reset (admin) / !ach_viewall (admin)",
         "Language: !mc_lang en|ru (shared McI18n, default en)",
         "Tunables: !am_vars achievements",
@@ -553,8 +553,33 @@ local m = {
         if ( ( "variables" in this ) && this.variables.chat_notify != 0 && hPlayer != null && hPlayer.IsValid() )
             this._msgId( hPlayer, "unlocked_chat", { title = title } );
 
+        if ( hMarine == null || !hMarine.IsValid() )
+            hMarine = this._anyMarineOfPlayer( hPlayer );
         this._showPopup( hMarine, def, hPlayer );
         return true;
+    },
+
+    // Живой GetMarine, иначе труп с этим командиром (IsInhabited уже false).
+    function _anyMarineOfPlayer( hPlayer ) {
+        if ( hPlayer == null || !hPlayer.IsValid() )
+            return null;
+        try {
+            local m = hPlayer.GetMarine();
+            if ( m != null && m.IsValid() )
+                return m;
+        } catch ( e ) {
+        }
+        local m = null;
+        while ( ( m = Entities.FindByClassname( m, "asw_marine" ) ) != null ) {
+            if ( !m.IsValid() )
+                continue;
+            try {
+                if ( m.GetCommander() == hPlayer )
+                    return m;
+            } catch ( e2 ) {
+            }
+        }
+        return null;
     },
 
     function _asMarine( ent ) {
@@ -964,12 +989,14 @@ local m = {
     },
 
     function _showPopup( hMarine, def, hPlayer ) {
-        if ( hMarine == null || !hMarine.IsValid() )
-            return false;
-        if ( !( "variables" in this ) || this.variables.popup == 0 )
-            return false;
         if ( def == null )
             return false;
+        if ( !( "variables" in this ) || this.variables.popup == 0 ) {
+            ::McLog.Warn( "[ACH] popup skipped: popup=0 (" + def.id + ")" );
+            return false;
+        }
+        if ( hMarine != null && !hMarine.IsValid() )
+            hMarine = null;
 
         local delay = this.variables.popup_delay.tofloat();
         if ( delay < 0.0 )
@@ -977,11 +1004,15 @@ local m = {
         local life = this.variables.popup_lifetime.tofloat();
         if ( life < 0.5 )
             life = 0.5;
+        local marineDead = ( hMarine == null );
         try {
-            if ( hMarine.GetHealth() <= 0 )
-                delay = 0.0;
+            if ( hMarine != null && hMarine.GetHealth() <= 0 )
+                marineDead = true;
         } catch ( e ) {
+            marineDead = true;
         }
+        if ( marineDead )
+            delay = 0.0;
 
         local icon = "";
         if ( ( "icon" in def ) && def.icon != null )
@@ -1008,12 +1039,13 @@ local m = {
         e.__KeyValueFromString( "client_vscript", this._CLIENT_SCRIPT );
         e.Spawn();
         e.Activate();
-        e.SetEntity( 0, hMarine );
+        if ( hMarine != null )
+            e.SetEntity( 0, hMarine );
         e.SetString( 0, this._popupPayload( icon, nick, title ) );
         e.SetInt( 0, 0 );
         e.SetInt( 1, 1 );
         e.SetInt( 2, stack );
-        e.SetInt( 19, hMarine.entindex() );
+        e.SetInt( 19, hMarine != null ? hMarine.entindex() : 0 );
         e.SetInt( 20, this._LANE );
         e.SetInt( 21, 1 );
         e.SetFloat( 0, showAt );
@@ -1023,6 +1055,7 @@ local m = {
         if ( this._popups == null )
             this._popups = [];
         this._popups.append( { ent = e, marine = hMarine, hideAt = hideAt } );
+        ::McLog.Info( "[ACH] popup " + def.id + " → " + nick );
         return true;
     },
 
@@ -1036,8 +1069,6 @@ local m = {
             if ( p.ent == null || !p.ent.IsValid() )
                 dead = true;
             else if ( now > p.hideAt + 0.5 )
-                dead = true;
-            else if ( p.marine == null || !p.marine.IsValid() )
                 dead = true;
             if ( dead ) {
                 if ( p.ent != null && p.ent.IsValid() )

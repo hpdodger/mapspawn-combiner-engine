@@ -1,6 +1,7 @@
 // mapspawn_combiner/modules/lang/module_lang.nut
 // Общий язык модулей combiner: !mc_lang [ru|en]
-// Хранение — ::McI18n (save/vscripts/mc_lang/).
+// Показ попапов на своём экране: !mc_popups [on|off]
+// Хранение — ::McI18n (save/vscripts/mc_lang/), ::McHud (save/vscripts/mc_hud/).
 
 if ( "McLangModuleLoaded" in getroottable() ) {
     ::McLog.Info( "[MC] lang: already loaded, skip" );
@@ -28,14 +29,46 @@ local _strings = {
         en = "!mc_lang [en|ru] — UI language for combiner modules (default en)",
         ru = "!mc_lang [en|ru] — язык интерфейса модулей combiner (по умолчанию en)",
     },
+    popups_tip = {
+        en = "world popups — !mc_popups / !mc_popups on|off",
+        ru = "попапы — !mc_popups / !mc_popups on|off",
+    },
+    popups_status = {
+        en = "popups = {state} (on|off). Example: !mc_popups off",
+        ru = "попапы = {state} (on|off). Пример: !mc_popups off",
+    },
+    popups_set = {
+        en = "popups → {state}",
+        ru = "попапы → {state}",
+    },
+    popups_on = {
+        en = "on",
+        ru = "вкл",
+    },
+    popups_off = {
+        en = "off",
+        ru = "выкл",
+    },
+    popups_help = {
+        en = "!mc_popups [on|off] — weapon-kill and teamkill popups on your screen",
+        ru = "!mc_popups [on|off] — попапы убийств и тимкиллов на своём экране",
+    },
+    popups_bad = {
+        en = "use on or off. Example: !mc_popups off",
+        ru = "нужно on или off. Пример: !mc_popups off",
+    },
+    popups_missing = {
+        en = "hud prefs not loaded",
+        ru = "выбор попапов не загружен",
+    },
 };
 
 local m = {
     name        = "lang",
     enabled     = true,
     convars     = {},
-    version     = "1.0.1",
-    description = "Shared UI language for mapspawn combiner modules (!mc_lang).",
+    version     = "1.1.0",
+    description = "Shared UI language (!mc_lang) and world-popup toggle (!mc_popups).",
     requires_registry = 4,
 
     _PREFIX     = "[MC] ",
@@ -61,7 +94,41 @@ local m = {
         return ::McI18n.TF( this._strings, msgId, lang, vars );
     },
 
-    function _handle( hPlayer, arg ) {
+    function _isCmd( full, prefix ) {
+        if ( full == null )
+            return false;
+        if ( full.len() < prefix.len() )
+            return false;
+        if ( full.slice( 0, prefix.len() ) != prefix )
+            return false;
+        if ( full.len() == prefix.len() )
+            return true;
+        local nextCh = full.slice( prefix.len(), prefix.len() + 1 );
+        return nextCh == " " || nextCh == "_";
+    },
+
+    function _cmdArg( full, prefix ) {
+        if ( full.len() == prefix.len() )
+            return null;
+        local rest = full.slice( prefix.len() );
+        if ( rest.len() > 0 && rest.slice( 0, 1 ) == "_" )
+            rest = rest.slice( 1 );
+        else if ( rest.len() > 0 && rest.slice( 0, 1 ) == " " )
+            rest = rest.slice( 1 );
+        while ( rest.len() > 0 && rest.slice( 0, 1 ) == " " )
+            rest = rest.slice( 1 );
+        if ( rest.len() == 0 )
+            return null;
+        return rest;
+    },
+
+    function _popupStateWord( hPlayer, hidden ) {
+        if ( hidden )
+            return this._t( hPlayer, "popups_off" );
+        return this._t( hPlayer, "popups_on" );
+    },
+
+    function _handleLang( hPlayer, arg ) {
         if ( !( "McI18n" in getroottable() ) ) {
             this._msg( hPlayer, "i18n not loaded" );
             return;
@@ -71,12 +138,57 @@ local m = {
             this._msg( hPlayer, this._t( hPlayer, "help" ) );
             return;
         }
+        if ( arg == "help" ) {
+            this._msg( hPlayer, this._t( hPlayer, "help" ) );
+            return;
+        }
         local set = ::McI18n.SetLang( hPlayer, arg );
         if ( set == null ) {
             this._msg( hPlayer, this._t( hPlayer, "steam" ) );
             return;
         }
         this._msg( hPlayer, ::McI18n.TF( this._strings, "set", set, { lang = set } ) );
+    },
+
+    function _handlePopups( hPlayer, arg ) {
+        if ( !( "McHud" in getroottable() ) ) {
+            this._msg( hPlayer, this._t( hPlayer, "popups_missing" ) );
+            return;
+        }
+        if ( arg == "help" ) {
+            this._msg( hPlayer, this._t( hPlayer, "popups_help" ) );
+            return;
+        }
+        if ( arg == null || arg == "" ) {
+            local hidden = ::McHud.Hidden( hPlayer );
+            this._msg( hPlayer, this._t( hPlayer, "popups_status", {
+                state = this._popupStateWord( hPlayer, hidden ),
+            } ) );
+            this._msg( hPlayer, this._t( hPlayer, "popups_help" ) );
+            return;
+        }
+        local sp = arg.find( " " );
+        if ( sp != null )
+            arg = arg.slice( 0, sp );
+        local hidden = ::McHud.ParseHidden( arg );
+        if ( hidden == null ) {
+            this._msg( hPlayer, this._t( hPlayer, "popups_bad" ) );
+            return;
+        }
+        local set = ::McHud.SetHidden( hPlayer, hidden );
+        if ( set == null ) {
+            this._msg( hPlayer, this._t( hPlayer, "steam" ) );
+            return;
+        }
+        this._msg( hPlayer, this._t( hPlayer, "popups_set", {
+            state = this._popupStateWord( hPlayer, set ),
+        } ) );
+    },
+
+    function OnGameEvent_player_activate( params ) {
+        if ( !( "McHud" in getroottable() ) )
+            return;
+        ::McHud.RefreshLivePopups();
     },
 
     function OnGameEvent_player_say( params ) {
@@ -90,36 +202,24 @@ local m = {
             text = "!" + text.slice( 1 );
 
         local full = text.tolower();
-        local prefix = this._CMD_PREFIX;
-        if ( full.len() < prefix.len() )
-            return;
-        if ( full.slice( 0, prefix.len() ) != prefix )
-            return;
-        if ( full.len() > prefix.len() ) {
-            local nextCh = full.slice( prefix.len(), prefix.len() + 1 );
-            if ( nextCh != " " && nextCh != "_" )
+        local hPlayer = null;
+
+        if ( this._isCmd( full, "!mc_popups" ) ) {
+            hPlayer = GetPlayerFromUserID( params["userid"] );
+            if ( hPlayer == null || !hPlayer.IsValid() )
                 return;
+            this._handlePopups( hPlayer, this._cmdArg( full, "!mc_popups" ) );
+            return;
         }
 
-        local hPlayer = GetPlayerFromUserID( params["userid"] );
+        local prefix = this._CMD_PREFIX;
+        if ( !this._isCmd( full, prefix ) )
+            return;
+
+        hPlayer = GetPlayerFromUserID( params["userid"] );
         if ( hPlayer == null || !hPlayer.IsValid() )
             return;
-
-        local arg = null;
-        local sp = full.find( " " );
-        if ( sp != null ) {
-            arg = full.slice( sp + 1 );
-            while ( arg.len() > 0 && arg.slice( 0, 1 ) == " " )
-                arg = arg.slice( 1 );
-            if ( arg.len() == 0 )
-                arg = null;
-        }
-        // !mc_lang_help
-        if ( full == "!mc_lang_help" || ( arg != null && arg == "help" ) ) {
-            this._msg( hPlayer, this._t( hPlayer, "help" ) );
-            return;
-        }
-        this._handle( hPlayer, arg );
+        this._handleLang( hPlayer, this._cmdArg( full, prefix ) );
     },
 
     // Join-tip отключён: одна строка от admin — !am_help

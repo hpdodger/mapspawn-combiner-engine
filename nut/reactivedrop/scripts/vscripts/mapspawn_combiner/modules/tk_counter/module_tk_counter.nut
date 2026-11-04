@@ -231,6 +231,8 @@ if ( "TkCounterLoaded" in getroottable() ) {
             e.SetInt( 2, stack );
             e.SetInt( 19, hMarine.entindex() );
             e.SetInt( 20, 2 );   // дорожка стека: тимкилл
+            if ( "McHud" in getroottable() )
+                ::McHud.ApplyMask( e );
             e.SetFloat( 0, showAt );
             e.SetFloat( 1, hideAt );
             this._writePopupStyle( e );

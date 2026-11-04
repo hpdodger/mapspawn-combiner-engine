@@ -20,6 +20,10 @@ EquipIcon, лечение — крест эмоции медика.
 хранение `save/vscripts/mc_lang/`). По умолчанию **en**. То же значение
 подхватывают TK (`!tkc_lang` пишет в тот же `McI18n`).
 
+Попапы на своём экране: `!mc_popups on|off` (тот же модуль `lang`,
+хранение `save/vscripts/mc_hud/`). По умолчанию **вкл**. Скрывает плашки
+убийств и тимкиллов только у этого игрока.
+
 Выключить: `!am_disable weapon_kills`.
 Настройки: `!am_vars weapon_kills` / `!am_set weapon_kills …`
 (менять и сохранять может admin из `admins.nut`).
@@ -108,6 +112,7 @@ deployable offhand. Считается только оружие в руках, 
 | `!wkc_reset` | admin | обнулить **свои** сохранённые треки |
 | `!wkc_test <id\|classname> [1-8]` | admin | тестовый popup: накрутка 0→127, столько штук |
 | `!mc_lang [en\|ru]` | все | общий язык модулей combiner |
+| `!mc_popups [on\|off]` | все | попапы убийств и тимкиллов на своём экране |
 
 Примеры теста иконки:
 
@@ -192,6 +197,7 @@ Popup висит в той же высотной зоне, что vanilla strang
 | Int 9..11 | bg RGB |
 | Int 12 / 13 / 14 | bg alpha / content alpha / style marker (`1`) |
 | Int 15..17 / 18 | tint иконки / маркер (`1`); лечение: белый, без cyan |
+| Int 22 | маска зрителей, которые не рисуют попап (`!mc_popups off`, бит `entindex-1`) |
 | Float 0 / 1 | Time() начала / конца показа |
 | Float 2..8 | x, y, stack_gap, icon_w, icon_h, scale, anim_time |
 

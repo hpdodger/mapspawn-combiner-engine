@@ -70,6 +70,7 @@ const TK_MSG_HELP_RANKS      = "help_ranks"
 const TK_MSG_HELP_LANG       = "help_lang"
 const TK_MSG_HELP_ON         = "help_on"
 const TK_MSG_HELP_OFF        = "help_off"
+const TK_MSG_HELP_POPUPS     = "help_popups"
 const TK_MSG_HELP_RESET      = "help_reset"
 const TK_MSG_HELP_HELP       = "help_help"
 const TK_MSG_HELP_AUTHOR     = "help_author"
@@ -198,6 +199,10 @@ const TK_MSG_TEST_USAGE      = "test_usage"
     help_off = {
         ru = "!tkc_off — скрыть чат о звании и красный текст по центру",
         en = "!tkc_off — hide rank-up chat and red center text",
+    },
+    help_popups = {
+        ru = "!mc_popups on|off — попапы убийств и тимкиллов на своём экране",
+        en = "!mc_popups on|off — weapon-kill and teamkill popups on your screen",
     },
     help_test = {
         ru = "!tkc_test [1-8] — тестовый попап над морпехом (админ)",
@@ -1267,6 +1272,7 @@ _TkPrintHelp <- function( hPlayer ) {
         TK_MSG_HELP_LANG,
         TK_MSG_HELP_ON,
         TK_MSG_HELP_OFF,
+        TK_MSG_HELP_POPUPS,
         TK_MSG_HELP_RESET,
         TK_MSG_HELP_TEST,
         TK_MSG_HELP_HELP,
@@ -1305,6 +1311,8 @@ _OnEntityKilled <- function( params ) {
     if ( attacker == victim )
         return
     if ( !attacker.IsInhabited() )
+        return
+    if ( !victim.IsInhabited() )
         return
 
     local hKiller = attacker.GetCommander()

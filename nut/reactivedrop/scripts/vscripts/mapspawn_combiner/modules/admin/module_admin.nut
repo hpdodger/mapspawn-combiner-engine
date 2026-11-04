@@ -29,8 +29,8 @@ local _strings = {
         ru = "  Автор: typical russian (https://steamcommunity.com/id/w_asd/)",
     },
     help_modules_line = {
-        en = "  Module help: !tkc_help  !laser  !wkc_help  !mc_lang",
-        ru = "  Справка модулей: !tkc_help  !laser  !wkc_help  !mc_lang",
+        en = "  Module help: !tkc_help  !laser  !wkc_help  !mc_lang  !mc_popups",
+        ru = "  Справка модулей: !tkc_help  !laser  !wkc_help  !mc_lang  !mc_popups",
     },
     help_acl = {
         en = "  Viewing is open; enable/disable/set/save/load/reset/leader/kick need mapspawn_combiner/admins.nut whitelist.",
@@ -222,7 +222,7 @@ local m = {
     name        = "admin",
     enabled     = true,
     convars     = {},
-    version     = "1.3.0",
+    version     = "1.3.1",
     description = "Runtime mapspawn combiner module management: the !am_ chat commands.",
     requires_registry = 4,
 

@@ -3,7 +3,7 @@
 Свои достижения (не Steam UserStats): сейв на аккаунт, чат `!ach`, попап справа
 ниже плашки тимкилла. Наблюдатель: урон и спавны не меняет.
 
-Имя в реестре: `achievements`. Версия — в `module_achievements.nut` (`0.1.6`).
+Имя в реестре: `achievements`. Версия — в `module_achievements.nut` (`0.1.9`).
 Тег в чате: `[ACH]`. Язык — общий combiner: `!mc_lang en|ru`.
 
 Выключить: `!am_disable achievements`.
@@ -28,7 +28,7 @@ modules/achievements/
 Клиентский Paint — тот же stub `weapon_kills`:
 
 ```
-scripts/vscripts/weapon_kills/wkc_popup_hud.nut
+scripts/vscripts/weapon_kills/wkc_ach_hud.nut
 materials/vgui/achievements/orange_juice.vmt + .vtf
 materials/vgui/achievements/fruits_revenge.vmt + .vtf
 materials/vgui/achievements/bloodbath.vmt + .vtf
@@ -72,9 +72,12 @@ AchRegister( {
 
 Справа от головы (`popup_x` 120), ниже TK (`popup_y` 48), дорожка 3.
 Над полоской — ник, под ней слева иконка 32×32, справа заголовок на 1–2 строки.
-Числа нет. `Int 21 = 1` в `wkc_popup_hud.nut`.
+Числа нет. `Int 21 = 1` в `wkc_ach_hud.nut` (отдельное имя от TK, чтобы Steam
+не подсовывал старый `wkc_popup_hud.nut`).
+`!ach_test` берёт живого `GetMarine()`. Реальный unlock (pure_heart и т.п.) часто
+без inhabited-морпеха: ищем труп по командиру, иначе HUD без якоря.
 Если якорь-труп и `ClientGetEntityScreenPos` пустой — плашка в верхней трети экрана.
-Ник берётся с игрока, не с `IsInhabited` мёртвого морпеха. Задержка 0, если HP ≤ 0.
+Ник берётся с игрока, не с `IsInhabited` мёртвого морпеха. Задержка 0, если HP ≤ 0 или якоря нет.
 
 В плашку уходит `title` на языке того, кто открыл. `!ach` — язык смотрящего.
 

@@ -12,6 +12,7 @@ IncludeScript( "mapspawn_combiner/registry" );
 IncludeScript( "mapspawn_combiner/game_events" );
 IncludeScript( "mapspawn_combiner/thinker_hooks" );
 IncludeScript( "mapspawn_combiner/i18n" );
+IncludeScript( "mapspawn_combiner/hud" );
 
 ::McLog.Info( "─────────────────────────────────────────" );
 ::McLog.Info( "  Mapspawn Combiner  registry v" + ::McRegistry.version );
