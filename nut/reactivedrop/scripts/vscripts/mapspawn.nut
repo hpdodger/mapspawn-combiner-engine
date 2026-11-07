@@ -19,23 +19,39 @@ IncludeScript( "mapspawn_combiner/hud" );
 ::McLog.Info( "  Author: typical russian (https://steamcommunity.com/id/w_asd/)" );
 ::McLog.Info( "─────────────────────────────────────────" );
 
-// Порядок = порядок раздачи. admin первым — чтобы им всегда можно было управлять остальными.
-IncludeScript( "mapspawn_combiner/modules/admin/module_admin" );
-IncludeScript( "mapspawn_combiner/modules/lang/module_lang" );
-IncludeScript( "mapspawn_combiner/modules/tk_counter/module_tk_counter" );
-IncludeScript( "mapspawn_combiner/modules/laser_pointer/module_laser_pointer" );
-IncludeScript( "mapspawn_combiner/modules/weapon_kills/module_weapon_kills" );
-IncludeScript( "mapspawn_combiner/modules/achievements/module_achievements" );
-IncludeScript( "mapspawn_combiner/modules/assburn/module_assburn" );
-IncludeScript( "mapspawn_combiner/modules/grubrain/module_grubrain" );
-IncludeScript( "mapspawn_combiner/modules/legacy_chat/module_legacy_chat" );
-IncludeScript( "mapspawn_combiner/modules/detailed_death_message/module_detailed_death_message" );
-
-// Файл настроек сервера (тихие флаги enabled — без OnEnable/OnDisable).
-local _mcAdmin = ::McRegistry.FindModule( "admin" );
-if ( _mcAdmin != null && ( "ApplySavedSettings" in _mcAdmin ) )
-    _mcAdmin.ApplySavedSettings( true );
-
-::McRegistry.ApplyConvars();
+// Хуки движка до модулей: если IncludeScript всё же оборвёт этот файл,
+// чат и раздача уже живы. Модули, успевшие зарегистрироваться, работают.
 ::McGameEvents.BindDispatchers();
 ::McThinkers.BindHooks();
+
+// Порядок = порядок раздачи. admin первым — чтобы им всегда можно было управлять остальными.
+// Падение одного модуля не должно гасить остальные.
+local McInclude = function( path ) {
+    try {
+        IncludeScript( path );
+    } catch ( e ) {
+        ::McLog.Err( "[MC] IncludeScript failed: " + path + " — " + e );
+    }
+};
+
+McInclude( "mapspawn_combiner/modules/admin/module_admin" );
+McInclude( "mapspawn_combiner/modules/lang/module_lang" );
+McInclude( "mapspawn_combiner/modules/tk_counter/module_tk_counter" );
+McInclude( "mapspawn_combiner/modules/laser_pointer/module_laser_pointer" );
+McInclude( "mapspawn_combiner/modules/weapon_kills/module_weapon_kills" );
+McInclude( "mapspawn_combiner/modules/achievements/module_achievements" );
+McInclude( "mapspawn_combiner/modules/assburn/module_assburn" );
+McInclude( "mapspawn_combiner/modules/grubrain/module_grubrain" );
+McInclude( "mapspawn_combiner/modules/legacy_chat/module_legacy_chat" );
+McInclude( "mapspawn_combiner/modules/detailed_death_message/module_detailed_death_message" );
+McInclude( "mapspawn_combiner/modules/spec_lock/module_spec_lock" );
+
+// Файл настроек сервера (тихие флаги enabled — без OnEnable/OnDisable).
+try {
+    local _mcAdmin = ::McRegistry.FindModule( "admin" );
+    if ( _mcAdmin != null && ( "ApplySavedSettings" in _mcAdmin ) )
+        _mcAdmin.ApplySavedSettings( true );
+    ::McRegistry.ApplyConvars();
+} catch ( e2 ) {
+    ::McLog.Err( "[MC] ApplySavedSettings/ApplyConvars failed: " + e2 );
+}

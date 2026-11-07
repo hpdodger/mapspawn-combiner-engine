@@ -1,15 +1,19 @@
 // mapspawn_combiner/hud.nut
 // Показ мировых попапов (weapon_kills / tk_counter) на экране конкретного игрока.
 // Persist: save/vscripts/mc_hud/<accountId>.txt (одна строка: 1 = показывать, 0 = скрыть).
-// Команда: !mc_popups (модуль lang). Клиент читает маску в Int 22 попапа.
+// Команда: !mc_popups (модуль lang).
+// На клиенте у игрока нет entindex(); скрытие — отдельный rd_hud_vscript на игрока
+// (Entity 0 = player, Int 23 = 1), Paint сравнивает с GetLocalPlayer().
 
 if ( !( "McHud" in getroottable() ) ) {
 
 ::McHud <- {
     version = 1,
-    _DIR     = "mc_hud/",
-    _cache   = null,   // accountId -> bool (true = скрыть)
-    _session = null,   // entindex -> bool, без SteamID (LAN/BOT), только эта карта
+    _DIR      = "mc_hud/",
+    _CLIENT   = "weapon_kills/wkc_popup_hud.nut",
+    _cache    = null,   // accountId -> bool (true = скрыть)
+    _session  = null,   // entindex -> bool, без SteamID (LAN/BOT), только эта карта
+    _viewers  = null,   // [ { ent, player }, … ] — prefs HUD на каждого игрока
 
     function _playerFile( id ) {
         return this._DIR + id.tostring() + ".txt";
@@ -96,44 +100,68 @@ if ( !( "McHud" in getroottable() ) ) {
         return hidden;
     },
 
-    function HideMask() {
-        local mask = 0;
-        local p = Entities.FindByClassname( null, "player" );
-        while ( p != null ) {
-            if ( p.IsValid() && this.Hidden( p ) ) {
-                local bit = p.entindex() - 1;
-                if ( bit >= 0 && bit < 32 )
-                    mask = mask | ( 1 << bit );
-            }
-            p = Entities.FindByClassname( p, "player" );
-        }
-        return mask;
-    },
-
-    function ApplyMask( e ) {
-        if ( e == null || !e.IsValid() )
+    function _flushViewers() {
+        if ( this._viewers == null )
             return;
-        e.SetInt( 22, this.HideMask() );
-    },
-
-    function _writeModulePopups( name, mask ) {
-        if ( !( "McRegistry" in getroottable() ) )
-            return;
-        local m = ::McRegistry.FindModule( name );
-        if ( m == null || !( "_popups" in m ) || m._popups == null )
-            return;
-        foreach ( rec in m._popups ) {
+        local keep = [];
+        foreach ( rec in this._viewers ) {
             if ( rec == null )
                 continue;
-            if ( rec.ent != null && rec.ent.IsValid() )
-                rec.ent.SetInt( 22, mask );
+            if ( rec.player == null || !rec.player.IsValid() ) {
+                if ( rec.ent != null && rec.ent.IsValid() )
+                    rec.ent.Destroy();
+                continue;
+            }
+            if ( rec.ent == null || !rec.ent.IsValid() )
+                continue;
+            keep.append( rec );
         }
+        this._viewers = keep;
+    },
+
+    function EnsureViewer( hPlayer ) {
+        if ( hPlayer == null || !hPlayer.IsValid() )
+            return;
+        this._flushViewers();
+        local hidden = this.Hidden( hPlayer ) ? 1 : 0;
+        if ( this._viewers != null ) {
+            foreach ( rec in this._viewers ) {
+                if ( rec.player == hPlayer ) {
+                    rec.ent.SetEntity( 0, hPlayer );
+                    rec.ent.SetInt( 22, hidden );
+                    rec.ent.SetInt( 23, 1 );
+                    return;
+                }
+            }
+        }
+        local e = Entities.CreateByClassname( "rd_hud_vscript" );
+        if ( e == null || !e.IsValid() ) {
+            ::McLog.Err( "[MC] hud: failed to create prefs rd_hud_vscript" );
+            return;
+        }
+        e.__KeyValueFromString( "client_vscript", this._CLIENT );
+        e.Spawn();
+        e.Activate();
+        e.SetEntity( 0, hPlayer );
+        e.SetInt( 22, hidden );
+        e.SetInt( 23, 1 );
+        if ( this._viewers == null )
+            this._viewers = [];
+        this._viewers.append( { ent = e, player = hPlayer } );
+    },
+
+    // Оставлено: weapon_kills / tk_counter зовут после спавна попапа. Маска на
+    // самой плашке клиенту не нужна (нет entindex), скрытие — prefs-сущность.
+    function ApplyMask( e ) {
     },
 
     function RefreshLivePopups() {
-        local mask = this.HideMask();
-        this._writeModulePopups( "weapon_kills", mask );
-        this._writeModulePopups( "tk_counter", mask );
+        local p = Entities.FindByClassname( null, "player" );
+        while ( p != null ) {
+            if ( p.IsValid() )
+                this.EnsureViewer( p );
+            p = Entities.FindByClassname( p, "player" );
+        }
     },
 };
 

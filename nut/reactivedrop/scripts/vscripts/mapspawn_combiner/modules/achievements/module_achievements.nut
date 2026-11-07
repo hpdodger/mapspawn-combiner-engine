@@ -35,6 +35,7 @@ IncludeScript( "mapspawn_combiner/modules/achievements/defs/orange_juice" );
 IncludeScript( "mapspawn_combiner/modules/achievements/defs/fruits_revenge" );
 IncludeScript( "mapspawn_combiner/modules/achievements/defs/bloodbath" );
 IncludeScript( "mapspawn_combiner/modules/achievements/defs/pure_heart" );
+IncludeScript( "mapspawn_combiner/modules/achievements/defs/fly_bait" );
 
 local _strings = {
     help_title = {
@@ -147,7 +148,7 @@ local m = {
     name        = "achievements",
     enabled     = true,
     convars     = {},
-    version     = "0.1.9",
+    version     = "0.2.0",
     description = "Custom (non-Steam) achievements: save, !ach, world popup below teamkill.",
     requires_registry = 4,
 
@@ -609,6 +610,24 @@ local m = {
         if ( hPlayer == null || !hPlayer.IsValid() )
             return null;
         return hPlayer;
+    },
+
+    // GetCommander даже если IsInhabited уже false (труп в entity_killed).
+    function _commanderAny( hMarine ) {
+        local hPlayer = this._commanderOfMarine( hMarine );
+        if ( hPlayer != null )
+            return hPlayer;
+        if ( hMarine == null || !hMarine.IsValid() )
+            return null;
+        if ( hMarine.GetClassname() != "asw_marine" )
+            return null;
+        try {
+            hPlayer = hMarine.GetCommander();
+            if ( hPlayer != null && hPlayer.IsValid() )
+                return hPlayer;
+        } catch ( e ) {
+        }
+        return null;
     },
 
     function _noteMarineKill( key ) {
@@ -1339,6 +1358,28 @@ local m = {
                 para = inflictorRaw;
             if ( para != null && vKey != null )
                 this._onParasiteTouchedPlayer( para, vKey );
+        }
+
+        // Смерть морпеха от кого угодно (баззер, дрон, мир…). Дальше обработчик
+        // сужает убийцу до asw_marine для OnMarineKilled / OnMarineSpree.
+        if ( victim.GetClassname() == "asw_marine" ) {
+            local hDied = hVictimPlayer;
+            if ( hDied == null )
+                hDied = this._commanderAny( victim );
+            if ( hDied != null ) {
+                local diedKey = this._playerKey( hDied );
+                if ( diedKey != null ) {
+                    this._touch( hDied );
+                    local deathCtx = this._makeCtx( diedKey, hDied, victim );
+                    foreach ( def in ::g_AchDefs ) {
+                        if ( this._isUnlocked( diedKey, def.id ) )
+                            continue;
+                        if ( !( "OnMarineDied" in def ) )
+                            continue;
+                        def.OnMarineDied( deathCtx, victim, diedKey, attackerRaw, inflictorRaw );
+                    }
+                }
+            }
         }
 
         if ( !( "entindex_attacker" in params ) )

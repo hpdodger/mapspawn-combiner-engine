@@ -26,7 +26,8 @@
 //   Int 19   — entindex морпеха (0 = старый сервер, стек по фиксированному шагу)
 //   Int 20   — дорожка стека: 1 оружие, 2 тимкилл, 3 ачивка. Чужие плашки в расчёт не входят.
 //   Int 21   — 1 = режим ачивки (иконка + заголовок, без числа).
-//   Int 22   — маска зрителей, которые не рисуют попап (бит entindex-1).
+//   Int 22   — prefs-сущность: 1 = этот зритель скрыл попапы (!mc_popups off).
+//   Int 23   — 1 = prefs-сущность (Entity 0 = player). Не рисовать плашку.
 //   Float 0  — Time() начала показа
 //   Float 1  — Time() конца
 //   Float 2  — popup_x @768p
@@ -334,15 +335,15 @@ function _paintAchievement( sp, stack, iconPath, nick, title, screenX, gapX, ico
 }
 
 function Paint() {
-    local lp = GetLocalPlayer();
-    if ( lp != null && lp.IsValid() ) {
-        local bit = lp.entindex() - 1;
-        if ( bit >= 0 && bit < 32 ) {
-            local mask = self.GetInt( 22 );
-            if ( ( mask & ( 1 << bit ) ) != 0 )
-                return;
-        }
+    if ( self.GetInt( 23 ) == 1 ) {
+        local lp = GetLocalPlayer();
+        if ( lp != null && self.GetEntity( 0 ) == lp )
+            getroottable().WkcPopupsHidden <- ( self.GetInt( 22 ) != 0 );
+        return;
     }
+    local root = getroottable();
+    if ( ( "WkcPopupsHidden" in root ) && root.WkcPopupsHidden )
+        return;
 
     local now = Time();
     local t0 = self.GetFloat( 0 );

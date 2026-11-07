@@ -2,9 +2,10 @@
 // Счётчик убийств по трекам оружия и лечения медиком (strange-like).
 // Убийства: OnTakeDamage_Alive_Any — inhabited marine → alien, lethal hit, оружие в kill-треке.
 // Лечение: OnGameEvent_marine_healed — queued HP (amount), classname в heal-треке.
+// Боты как пациенты не считаются (нужен inhabited marine). Самолечение не считается.
 // Persist: save/vscripts/weapon_kills/<accountId>.txt + index.txt
 // HUD: rd_hud_vscript + client weapon_kills/wkc_popup_hud.nut (stub challenge weapon_kills).
-// Чат: !wkc / !wkc_help / !wkc_reset / !wkc_test (test — McAuth).
+// Чат: !wkc / !wkc_help / !wkc_reset / !wkc_test (test — McAuth) / !med_top.
 // Вкл/выкл: !am_enable / !am_disable weapon_kills
 
 if ( "WeaponKillsLoaded" in getroottable() ) {
@@ -27,6 +28,10 @@ local _strings = {
     help_wkc = {
         en = "!wkc — your kill and heal counts",
         ru = "!wkc — ваши счётчики убийств и лечения",
+    },
+    help_med_top = {
+        en = "!med_top — healing leaderboard",
+        ru = "!med_top — топ по лечению",
     },
     help_help = {
         en = "!wkc_help — this help",
@@ -112,14 +117,30 @@ local _strings = {
         en = "{name} — {label}: {tier}",
         ru = "{name} — {label}: {tier}",
     },
+    top_header = {
+        en = "=== Med Top ===",
+        ru = "=== Med Top ===",
+    },
+    top_empty = {
+        en = "(empty)",
+        ru = "(пусто)",
+    },
+    top_collecting = {
+        en = "Collecting the table…",
+        ru = "Собираю таблицу…",
+    },
+    top_line = {
+        en = "{n}. {name}: {count}",
+        ru = "{n}. {name}: {count}",
+    },
 };
 
 local m = {
     name        = "weapon_kills",
     enabled     = true,
     convars     = {},
-    version     = "0.5.8",
-    description = "Per-weapon kill tracks and medic heal tracks: count, save, !wkc, world popup.",
+    version     = "0.5.10",
+    description = "Per-weapon kill tracks and medic heal tracks: count, save, !wkc, !med_top, world popup.",
     requires_registry = 4,
 
     console_info = [
@@ -127,7 +148,7 @@ local m = {
         "Counts alien kills per weapon track and medic queued HP; tier-up shows icon + number over the marine.",
         "Kill popup: EquipIcon. Heal popup: medic emote cross (vgui/weapon_kills/heal_icon).",
         "Client Paint needs challenge stub weapon_kills (required_on_client) on the client.",
-        "Chat: !wkc / !wkc_help / !wkc_reset (admin) / !wkc_test (admin, force popup)",
+        "Chat: !wkc / !wkc_help / !med_top / !wkc_reset (admin) / !wkc_test (admin, force popup)",
         "Language: !mc_lang en|ru (shared McI18n, default en)",
         "Hide world popups on your screen: !mc_popups off  (on to show again)",
         "Tunables: !am_vars weapon_kills",
@@ -154,6 +175,16 @@ local m = {
     _popups   = null,   // [ { ent, marine, hideAt }, … ]
     _dirty    = null,   // accountId -> true (отложенный save лечения)
     _dirtyAt  = 0.0,
+    _index      = null,   // [ accountId, … ]
+    _indexSet   = null,   // accountId -> true
+    _indexReady = false,
+    _warmCursor = 0,
+    _warmDone   = false,
+    _pendingTop = null,   // [ { hPlayer, key }, … ]
+    _topCooldown = null,  // key -> Time() until
+    _TOP_N = 10,
+    _WARM_BATCH = 8,
+    _TOP_COOLDOWN = 10.0,
 
     // ---------- messaging / i18n ----------
 
@@ -312,7 +343,7 @@ local m = {
         return lines;
     },
 
-    function _loadIndex() {
+    function _readIndexFile() {
         local ids = [];
         foreach ( line in this._splitLines( FileToString( this._INDEX ) ) ) {
             if ( line.len() > 0 )
@@ -321,21 +352,32 @@ local m = {
         return ids;
     },
 
-    function _saveIndex( ids ) {
+    function _ensureIndexLoaded() {
+        if ( this._indexReady )
+            return;
+        this._index = this._readIndexFile();
+        this._indexSet = {};
+        foreach ( id in this._index )
+            this._indexSet[id] <- true;
+        this._indexReady = true;
+    },
+
+    function _saveIndex() {
         local out = "";
-        foreach ( id in ids )
-            out += id + "\n";
+        if ( this._index != null ) {
+            foreach ( id in this._index )
+                out += id + "\n";
+        }
         StringToFile( this._INDEX, out );
     },
 
     function _ensureInIndex( id ) {
-        local ids = this._loadIndex();
-        foreach ( existing in ids ) {
-            if ( existing == id )
-                return;
-        }
-        ids.append( id );
-        this._saveIndex( ids );
+        this._ensureIndexLoaded();
+        if ( id in this._indexSet )
+            return;
+        this._index.append( id );
+        this._indexSet[id] <- true;
+        this._saveIndex();
     },
 
     function _sanitizeName( name ) {
@@ -467,6 +509,18 @@ local m = {
         return 0;
     },
 
+    function _healTotal( rec ) {
+        if ( rec == null )
+            return 0;
+        local total = 0;
+        foreach ( track in ::WkcTracks ) {
+            if ( this._kindOf( track ) != "heal" )
+                continue;
+            total += this._countOf( rec, track.id );
+        }
+        return total;
+    },
+
     function _addAmount( hPlayer, track, delta ) {
         local touched = this._touch( hPlayer );
         if ( touched == null )
@@ -504,6 +558,7 @@ local m = {
     function _printHelp( hPlayer ) {
         this._msgId( hPlayer, "help_title" );
         this._msgId( hPlayer, "help_wkc" );
+        this._msgId( hPlayer, "help_med_top" );
         this._msgId( hPlayer, "help_help" );
         this._msgId( hPlayer, "help_reset" );
         this._msgId( hPlayer, "help_test" );
@@ -700,6 +755,157 @@ local m = {
         if ( n > 8 )
             n = 8;
         return n;
+    },
+
+    function _topViewerKey( hPlayer ) {
+        if ( "McAuth" in getroottable() ) {
+            local id = ::McAuth.PlayerKey( hPlayer );
+            if ( id != null )
+                return id;
+        }
+        if ( hPlayer != null && hPlayer.IsValid() )
+            return "e" + hPlayer.entindex().tostring();
+        return null;
+    },
+
+    function _topOnCooldown( key ) {
+        if ( key == null || this._topCooldown == null )
+            return false;
+        if ( !( key in this._topCooldown ) )
+            return false;
+        return this._topCooldown[key] > Time();
+    },
+
+    function _topMarkCooldown( key ) {
+        if ( key == null )
+            return;
+        if ( this._topCooldown == null )
+            this._topCooldown = {};
+        this._topCooldown[key] <- Time() + this._TOP_COOLDOWN;
+    },
+
+    function _pendingHasKey( list, key ) {
+        if ( list == null )
+            return false;
+        foreach ( req in list ) {
+            if ( req.key == key )
+                return true;
+        }
+        return false;
+    },
+
+    // Все записи из кэша; в топ — 10 с наибольшей суммой heal-треков (0 пропускаем).
+    function _collectHealTopN() {
+        local top = [];
+        if ( this._index == null || this._cache == null )
+            return top;
+        foreach ( id in this._index ) {
+            if ( !( id in this._cache ) )
+                continue;
+            local rec = this._cache[id];
+            local count = this._healTotal( rec );
+            if ( count < 1 )
+                continue;
+            local entry = {
+                id = id,
+                count = count,
+                name = rec.name,
+            };
+            local n = top.len();
+            if ( n >= this._TOP_N && entry.count <= top[n - 1].count )
+                continue;
+            local pos = n;
+            for ( local i = 0; i < n; i++ ) {
+                if ( entry.count > top[i].count ) {
+                    pos = i;
+                    break;
+                }
+            }
+            local next = [];
+            for ( local i = 0; i < pos; i++ )
+                next.append( top[i] );
+            next.append( entry );
+            for ( local i = pos; i < n && next.len() < this._TOP_N; i++ )
+                next.append( top[i] );
+            top = next;
+        }
+        return top;
+    },
+
+    function _printMedTop( hPlayer ) {
+        if ( hPlayer == null || !hPlayer.IsValid() )
+            return;
+        this._msgId( hPlayer, "top_header" );
+        local list = this._collectHealTopN();
+        if ( list.len() == 0 ) {
+            this._msgId( hPlayer, "top_empty" );
+            return;
+        }
+        for ( local i = 0; i < list.len(); i++ ) {
+            local e = list[i];
+            this._msgId( hPlayer, "top_line", {
+                n = i + 1,
+                name = e.name,
+                count = e.count,
+            } );
+        }
+    },
+
+    function _flushPendingMedTop() {
+        if ( !this._warmDone )
+            return;
+        if ( this._pendingTop == null || this._pendingTop.len() == 0 )
+            return;
+        local pending = this._pendingTop;
+        this._pendingTop = [];
+        foreach ( req in pending ) {
+            local h = req.hPlayer;
+            if ( h == null || !h.IsValid() )
+                continue;
+            if ( this._topOnCooldown( req.key ) )
+                continue;
+            this._printMedTop( h );
+            this._topMarkCooldown( req.key );
+        }
+    },
+
+    function _requestMedTop( hPlayer ) {
+        if ( hPlayer == null || !hPlayer.IsValid() )
+            return;
+        local key = this._topViewerKey( hPlayer );
+        if ( key == null )
+            return;
+        if ( this._pendingTop == null )
+            this._pendingTop = [];
+        if ( !this._warmDone ) {
+            if ( this._pendingHasKey( this._pendingTop, key ) )
+                return;
+            this._msgId( hPlayer, "top_collecting" );
+            this._pendingTop.append( { hPlayer = hPlayer, key = key } );
+            return;
+        }
+        if ( this._topOnCooldown( key ) )
+            return;
+        this._printMedTop( hPlayer );
+        this._topMarkCooldown( key );
+    },
+
+    function _warmTick() {
+        if ( this._warmDone )
+            return;
+        this._ensureIndexLoaded();
+        local ids = this._index;
+        local n = 0;
+        while ( this._warmCursor < ids.len() && n < this._WARM_BATCH ) {
+            local id = ids[this._warmCursor];
+            this._warmCursor += 1;
+            if ( this._cache == null || !( id in this._cache ) ) {
+                this._load( id );
+                n += 1;
+            }
+        }
+        if ( this._warmCursor >= ids.len() )
+            this._warmDone = true;
     },
 
     function _handleCommand( hPlayer, cmd, arg ) {
@@ -1074,12 +1280,37 @@ local m = {
         if ( hMedic.GetClassname() != "asw_marine" )
             return;
 
+        // Только inhabited пациент. Ботов не считаем (маяк по зоне тоже).
+        local patientIdx = -1;
+        if ( ( "patient_entindex" in params ) && params.patient_entindex != null ) {
+            try {
+                patientIdx = params.patient_entindex.tointeger();
+            } catch ( e ) {
+                return;
+            }
+        }
+        if ( patientIdx < 0 )
+            return;
+        local hPatient = EntIndexToHScript( patientIdx );
+        if ( hPatient == null || !hPatient.IsValid() )
+            return;
+        if ( hPatient.GetClassname() != "asw_marine" )
+            return;
+        if ( !( "IsInhabited" in hPatient ) || !hPatient.IsInhabited() )
+            return;
+        // Свой морпех / свой маяк: не считаем, иначе накрутка.
+        if ( medicIdx == patientIdx )
+            return;
+
         local track = this._trackByWeapon( weaponClass, "heal" );
         if ( track == null )
             return;
 
         local hPlayer = hMedic.GetCommander();
         if ( hPlayer == null || !hPlayer.IsValid() )
+            return;
+        local hPatientPlayer = hPatient.GetCommander();
+        if ( hPatientPlayer != null && hPatientPlayer.IsValid() && hPatientPlayer == hPlayer )
             return;
 
         local result = this._addAmount( hPlayer, track, amount );
@@ -1099,22 +1330,35 @@ local m = {
         if ( text.len() > 0 && text.slice( 0, 1 ) == "/" )
             text = "!" + text.slice( 1 );
 
+        local full = text.tolower();
+        local isMedTop = ( full == "!med_top" );
+        if ( !isMedTop && full.len() > 8 && full.slice( 0, 9 ) == "!med_top " )
+            isMedTop = true;
+
         local prefix = this._CMD_PREFIX;
-        if ( text.len() < prefix.len() )
-            return;
-        if ( text.slice( 0, prefix.len() ).tolower() != prefix )
-            return;
-        if ( text.len() > prefix.len() ) {
-            local nextCh = text.slice( prefix.len(), prefix.len() + 1 );
-            if ( nextCh != "_" && nextCh != " " )
-                return;
+        local isWkc = false;
+        if ( full.len() >= prefix.len() && full.slice( 0, prefix.len() ) == prefix ) {
+            if ( full.len() == prefix.len() )
+                isWkc = true;
+            else {
+                local nextCh = full.slice( prefix.len(), prefix.len() + 1 );
+                if ( nextCh == "_" || nextCh == " " )
+                    isWkc = true;
+            }
         }
+
+        if ( !isMedTop && !isWkc )
+            return;
 
         local hPlayer = GetPlayerFromUserID( params["userid"] );
         if ( hPlayer == null || !hPlayer.IsValid() )
             return;
 
-        local full = text.tolower();
+        if ( isMedTop ) {
+            this._requestMedTop( hPlayer );
+            return;
+        }
+
         local cmd = full;
         local arg = null;
         local sp = full.find( " " );
@@ -1134,6 +1378,9 @@ local m = {
         this._flushPopups();
         if ( this._dirtyAt > 0.0 && ( Time() - this._dirtyAt ) >= this._SAVE_FLUSH )
             this._flushDirty();
+        if ( !this._warmDone )
+            this._warmTick();
+        this._flushPendingMedTop();
     },
 
     function OnGameplayStart() {

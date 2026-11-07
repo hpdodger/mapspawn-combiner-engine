@@ -1,7 +1,7 @@
 "CHALLENGE"
 {
 	"name"			"Stat Tracks HUD"
-	"description"	"v0.5.8 / tk 1.5.0 / ach 0.1.9 - Client HUD popups for weapon kills, healing, teamkills, achievements. YOU DONT NEED IT STANDALONE."
+	"description"	"v0.5.10 / tk 1.5.0 / ach 0.2.0 - Client HUD popups for weapon kills, healing, teamkills, achievements. YOU DONT NEED IT STANDALONE."
 
 	"required_on_client"	"1"
 

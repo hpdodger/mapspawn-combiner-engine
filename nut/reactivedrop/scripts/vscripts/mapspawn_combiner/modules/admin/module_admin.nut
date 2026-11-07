@@ -29,8 +29,8 @@ local _strings = {
         ru = "  Автор: typical russian (https://steamcommunity.com/id/w_asd/)",
     },
     help_modules_line = {
-        en = "  Module help: !tkc_help  !laser  !wkc_help  !mc_lang  !mc_popups",
-        ru = "  Справка модулей: !tkc_help  !laser  !wkc_help  !mc_lang  !mc_popups",
+        en = "  Module help: !tkc_help  !laser  !wkc_help  !mc_lang  !mc_popups  !spec",
+        ru = "  Справка модулей: !tkc_help  !laser  !wkc_help  !mc_lang  !mc_popups  !spec",
     },
     help_acl = {
         en = "  Viewing is open; enable/disable/set/save/load/reset/leader/kick need mapspawn_combiner/admins.nut whitelist.",

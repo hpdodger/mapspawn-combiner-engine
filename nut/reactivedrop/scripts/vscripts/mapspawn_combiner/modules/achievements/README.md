@@ -3,7 +3,7 @@
 Свои достижения (не Steam UserStats): сейв на аккаунт, чат `!ach`, попап справа
 ниже плашки тимкилла. Наблюдатель: урон и спавны не меняет.
 
-Имя в реестре: `achievements`. Версия — в `module_achievements.nut` (`0.1.9`).
+Имя в реестре: `achievements`. Версия — в `module_achievements.nut` (`0.2.0`).
 Тег в чате: `[ACH]`. Язык — общий combiner: `!mc_lang en|ru`.
 
 Выключить: `!am_disable achievements`.
@@ -22,6 +22,7 @@ modules/achievements/
   defs/fruits_revenge.nut
   defs/bloodbath.nut
   defs/pure_heart.nut
+  defs/fly_bait.nut
   README.md
 ```
 
@@ -33,6 +34,7 @@ materials/vgui/achievements/orange_juice.vmt + .vtf
 materials/vgui/achievements/fruits_revenge.vmt + .vtf
 materials/vgui/achievements/bloodbath.vmt + .vtf
 materials/vgui/achievements/pure_heart.vmt + .vtf
+materials/vgui/achievements/fly_bait.vmt + .vtf
 ```
 
 Без stub на клиенте счёт и `!ach` работают, попап не рисуется.
@@ -60,6 +62,7 @@ AchRegister( {
 ## Правила
 
 `OnMarineKilled`: убийца и жертва — морпех под живым игроком, без самоубийства.
+`OnMarineDied`: жертва — морпех игрока; убийца любой (`entity_killed` attacker/inflictor).
 
 | id | Когда |
 |---|---|
@@ -67,6 +70,7 @@ AchRegister( {
 | `fruits_revenge` | этот же аккаунт убивает игрока, у которого уже открыт `orange_juice` |
 | `bloodbath` | серия как у голоса monster kill в обычной игре: 4-е убийство морпеха, пауза `rd_killingspree_time_limit` (по умолчанию 3 с). Бот и своя смерть входят. Хук `OnMarineSpree`, длину считает модуль |
 | `pure_heart` | паразит убил тебя, затем этот же или вышедший из тебя убивает другого игрока (открывается первой жертве) |
+| `fly_bait` | добивающий удар баззера (`asw_buzzer`) по морпеху игрока; открывается этому игроку. Хук `OnMarineDied` |
 
 ## Попап
 

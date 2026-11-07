@@ -4,8 +4,8 @@
 AchRegister( {
     id    = "bloodbath",
     title = {
-        ru = "Кровавая баня",
-        en = "Bloodbath",
+        ru = "Буйство",
+        en = "Rampage",
     },
     desc  = {
         ru = "Убей четырёх морпехов одной серией.",
